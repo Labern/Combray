@@ -1,0 +1,289 @@
+import SwiftUI
+import AppKit
+
+/// Design tokens. White, simple, BIG, legible. One warm madeleine-gold accent.
+/// Swap this file to re-theme everything.
+enum Theme {
+    static let bg = Color.white
+    static let surface = Color(red: 0.975, green: 0.965, blue: 0.945)  // faint warm paper
+    static let ink = Color(red: 0.12, green: 0.11, blue: 0.10)
+    static let faint = Color(red: 0.42, green: 0.40, blue: 0.37)
+    static let line = Color(red: 0.89, green: 0.87, blue: 0.83)
+    static let accent = Color(red: 0.84, green: 0.68, blue: 0.24)      // gold
+    static let accentDeep = Color(red: 0.62, green: 0.49, blue: 0.13)  // deep antique gold
+
+    // Roomy spacing.
+    static let gap: CGFloat = 20
+    static let pad: CGFloat = 28
+    static let radius: CGFloat = 18
+
+    // BIG type scale. Serif for headings (literary), sans for body.
+    // Optima (a beautiful humanist sans) everywhere; Didot (elegant French serif) for "Combray".
+    static func sans(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight)
+    }
+    static func serif(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .serif)
+    }
+    static let wordmark = serif(56, .bold)
+    static let wordmarkSmall = serif(27, .bold)
+    static let hero = sans(46, .bold)
+    static let title = sans(31, .semibold)
+    static let section = sans(23, .semibold)
+    static let big = sans(22, .semibold)
+    static let body = sans(19)
+    static let small = sans(18)
+    static let label = sans(18, .semibold)
+}
+
+/// Big, unmissable buttons. There are no small tap targets in this app.
+struct BigButtonStyle: ButtonStyle {
+    var filled: Bool = true
+    var fullWidth: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Theme.sans(24, .semibold))
+            .padding(.vertical, 20)
+            .padding(.horizontal, 30)
+            .frame(minHeight: 68)
+            .frame(maxWidth: fullWidth ? .infinity : nil)
+            .foregroundStyle(filled ? Color.white : Theme.accentDeep)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.radius)
+                    .fill(filled ? Theme.accent : Theme.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.radius)
+                    .stroke(filled ? Color.clear : Theme.accent, lineWidth: 2)
+            )
+            .shadow(color: filled ? Theme.accent.opacity(0.30) : .clear, radius: 10, y: 4)
+            .opacity(configuration.isPressed ? 0.78 : 1)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radius))
+    }
+}
+
+extension View {
+    func card() -> some View {
+        self
+            .padding(Theme.pad)
+            .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.surface))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius).stroke(Theme.line, lineWidth: 1))
+    }
+}
+
+// MARK: - Madeleine
+
+/// A drawn madeleine — the shell-shaped cake of involuntary memory. Used as the hero mark
+/// and rendered into the Dock icon.
+struct MadeleineMark: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width, h = size.height
+            // Draw the whole mark scaled-in slightly so the bold outline is NEVER clipped by the
+            // Canvas edge — identical look to the Dock icon, just never cut off.
+            let inset: CGFloat = 0.90
+            ctx.translateBy(x: w * (1 - inset) / 2, y: h * (1 - inset) / 2)
+            ctx.scaleBy(x: inset, y: inset)
+
+            let cx = w * 0.5
+            let baseY = h * 0.86
+            let baseHalf = w * 0.10
+            let apex = CGPoint(x: cx, y: baseY)
+            let ribs = 6
+            let spread = CGFloat.pi * 0.44
+            let radius = h * 0.76
+            let widthScale: CGFloat = 0.68
+
+            func tip(_ i: Int) -> CGPoint {
+                let t = CGFloat(i) / CGFloat(ribs)
+                let a = (t - 0.5) * 2 * spread
+                return CGPoint(x: apex.x + sin(a) * radius * widthScale,
+                               y: apex.y - cos(a) * radius)
+            }
+
+            let baseL = CGPoint(x: cx - baseHalf, y: baseY)
+            let baseR = CGPoint(x: cx + baseHalf, y: baseY)
+
+            // Plump shell: rounded base, curved sides, scalloped wide top.
+            var shell = Path()
+            shell.move(to: baseL)
+            shell.addQuadCurve(to: tip(0),
+                control: CGPoint(x: tip(0).x - w * 0.04, y: (baseL.y + tip(0).y) / 2))
+            for i in 1...ribs {
+                let a = tip(i - 1), b = tip(i)
+                let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+                let dx = mid.x - apex.x, dy = mid.y - apex.y
+                let len = max(0.0001, (dx * dx + dy * dy).squareRoot())
+                let bulge = h * 0.06
+                let ctrl = CGPoint(x: mid.x + dx / len * bulge, y: mid.y + dy / len * bulge)
+                shell.addQuadCurve(to: b, control: ctrl)
+            }
+            shell.addQuadCurve(to: baseR,
+                control: CGPoint(x: tip(ribs).x + w * 0.04, y: (baseR.y + tip(ribs).y) / 2))
+            shell.addQuadCurve(to: baseL, control: CGPoint(x: cx, y: baseY + h * 0.07))
+            shell.closeSubpath()
+
+            // Flat cartoon golden fill.
+            ctx.fill(shell, with: .linearGradient(
+                Gradient(colors: [
+                    Color(red: 0.99, green: 0.85, blue: 0.47),
+                    Color(red: 0.90, green: 0.68, blue: 0.30)
+                ]),
+                startPoint: CGPoint(x: cx, y: h * 0.10),
+                endPoint: CGPoint(x: cx, y: baseY)))
+
+            // Bold cartoon ridges.
+            let ribColor = Color(red: 0.50, green: 0.32, blue: 0.12).opacity(0.55)
+            for i in 1..<ribs {
+                let t = CGFloat(i) / CGFloat(ribs)
+                let a = (t - 0.5) * 2 * spread
+                let end = CGPoint(x: apex.x + sin(a) * radius * widthScale * 0.82,
+                                  y: apex.y - cos(a) * radius * 0.84)
+                var p = Path()
+                p.move(to: CGPoint(x: apex.x, y: apex.y - h * 0.06))
+                p.addLine(to: end)
+                ctx.stroke(p, with: .color(ribColor), lineWidth: max(2, w * 0.02))
+            }
+
+            // Soft white highlight near the top.
+            ctx.fill(Path(ellipseIn: CGRect(x: w * 0.37, y: h * 0.19, width: w * 0.17, height: h * 0.09)),
+                     with: .color(.white.opacity(0.5)))
+
+            // Bold cartoon outline.
+            ctx.stroke(shell, with: .color(Color(red: 0.42, green: 0.27, blue: 0.10)),
+                       lineWidth: max(3, w * 0.045))
+        }
+        .aspectRatio(0.95, contentMode: .fit)
+    }
+}
+
+/// The in-app logo: just the madeleine (no plate), scaled slightly in so its outline is never
+/// clipped. The off-white plate is used only for the app/Dock icon.
+struct MadeleineIcon: View {
+    var body: some View {
+        MadeleineMark()
+    }
+}
+
+/// A small cartoon Marcel Proust — pale face, full side-parted dark hair, dark eyes, full
+/// mustache, white collar with a dark cravat over a dark coat.
+struct ProustMark: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width, h = size.height
+            let outline = Color(red: 0.18, green: 0.15, blue: 0.14)
+
+            // Coat
+            let coat = Path(roundedRect: CGRect(x: w * 0.12, y: h * 0.82, width: w * 0.76, height: h * 0.30),
+                            cornerRadius: w * 0.14)
+            ctx.fill(coat, with: .color(Color(red: 0.16, green: 0.15, blue: 0.18)))
+            // White collar V
+            var collar = Path()
+            collar.move(to: CGPoint(x: w * 0.38, y: h * 0.82))
+            collar.addLine(to: CGPoint(x: w * 0.50, y: h * 0.97))
+            collar.addLine(to: CGPoint(x: w * 0.62, y: h * 0.82))
+            ctx.fill(collar, with: .color(Color(red: 0.96, green: 0.95, blue: 0.93)))
+            // Dark cravat knot
+            ctx.fill(Path(ellipseIn: CGRect(x: w * 0.455, y: h * 0.85, width: w * 0.09, height: h * 0.07)),
+                     with: .color(Color(red: 0.30, green: 0.10, blue: 0.12)))
+
+            // Pale face
+            let face = Path(ellipseIn: CGRect(x: w * 0.30, y: h * 0.26, width: w * 0.40, height: h * 0.52))
+            ctx.fill(face, with: .color(Color(red: 0.97, green: 0.91, blue: 0.85)))
+            ctx.stroke(face, with: .color(outline.opacity(0.28)), lineWidth: max(1, w * 0.006))
+
+            // Full side-parted hair
+            var hair = Path()
+            hair.move(to: CGPoint(x: w * 0.28, y: h * 0.54))
+            hair.addQuadCurve(to: CGPoint(x: w * 0.50, y: h * 0.16), control: CGPoint(x: w * 0.24, y: h * 0.22))
+            hair.addQuadCurve(to: CGPoint(x: w * 0.72, y: h * 0.54), control: CGPoint(x: w * 0.78, y: h * 0.22))
+            hair.addQuadCurve(to: CGPoint(x: w * 0.65, y: h * 0.36), control: CGPoint(x: w * 0.72, y: h * 0.42))
+            hair.addQuadCurve(to: CGPoint(x: w * 0.44, y: h * 0.31), control: CGPoint(x: w * 0.55, y: h * 0.25))
+            hair.addQuadCurve(to: CGPoint(x: w * 0.35, y: h * 0.36), control: CGPoint(x: w * 0.37, y: h * 0.31))
+            hair.addQuadCurve(to: CGPoint(x: w * 0.28, y: h * 0.54), control: CGPoint(x: w * 0.28, y: h * 0.44))
+            ctx.fill(hair, with: .color(Color(red: 0.13, green: 0.10, blue: 0.09)))
+
+            // Eyebrows
+            for (bx, dir) in [(w * 0.41, CGFloat(1)), (w * 0.59, CGFloat(-1))] {
+                var b = Path()
+                b.move(to: CGPoint(x: bx - w * 0.045 * dir, y: h * 0.47))
+                b.addQuadCurve(to: CGPoint(x: bx + w * 0.045 * dir, y: h * 0.47), control: CGPoint(x: bx, y: h * 0.44))
+                ctx.stroke(b, with: .color(outline), lineWidth: max(1.5, w * 0.012))
+            }
+            // Eyes
+            for ex in [w * 0.41, w * 0.59] {
+                ctx.fill(Path(ellipseIn: CGRect(x: ex - w * 0.028, y: h * 0.50, width: w * 0.056, height: h * 0.05)),
+                         with: .color(outline))
+            }
+            // Full mustache
+            var mus = Path()
+            mus.move(to: CGPoint(x: w * 0.50, y: h * 0.66))
+            mus.addQuadCurve(to: CGPoint(x: w * 0.32, y: h * 0.63), control: CGPoint(x: w * 0.40, y: h * 0.73))
+            mus.addQuadCurve(to: CGPoint(x: w * 0.50, y: h * 0.68), control: CGPoint(x: w * 0.41, y: h * 0.69))
+            mus.addQuadCurve(to: CGPoint(x: w * 0.68, y: h * 0.63), control: CGPoint(x: w * 0.59, y: h * 0.69))
+            mus.addQuadCurve(to: CGPoint(x: w * 0.50, y: h * 0.66), control: CGPoint(x: w * 0.60, y: h * 0.73))
+            ctx.fill(mus, with: .color(Color(red: 0.12, green: 0.09, blue: 0.08)))
+        }
+        .aspectRatio(0.82, contentMode: .fit)
+    }
+}
+
+/// Proust cropped into a small circular avatar.
+struct ProustAvatar: View {
+    var body: some View {
+        ZStack {
+            Circle().fill(Color(red: 0.94, green: 0.91, blue: 0.87))
+            ProustMark().scaleEffect(1.5).offset(y: 5)
+        }
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Theme.line, lineWidth: 1))
+    }
+}
+
+/// Renders the madeleine into an NSImage and sets it as the app/Dock icon.
+@MainActor
+func installMadeleineDockIcon() {
+    let side: CGFloat = 512
+    let inset = side * 0.10              // transparent margin, so it matches other macOS app icons
+    let plate = side - inset * 2
+    let icon = ZStack {
+        RoundedRectangle(cornerRadius: plate * 0.2237, style: .continuous)
+            .fill(Color(red: 0.99, green: 0.975, blue: 0.94))
+        MadeleineMark().padding(plate * 0.22)
+    }
+    .frame(width: plate, height: plate)
+    .frame(width: side, height: side)
+
+    let renderer = ImageRenderer(content: icon)
+    renderer.isOpaque = false
+    renderer.scale = 2
+    if let image = renderer.nsImage {
+        NSApplication.shared.applicationIconImage = image
+    }
+}
+
+/// Renders the madeleine mark (on the off-white icon background) to a PNG — used to preview the
+/// art via `Combray --render <path>` so it can be inspected and iterated on.
+@MainActor
+func renderMadeleinePNG(to path: String) {
+    let controller = ArchiveController()
+    let ui = HStack(spacing: 0) {
+        SidebarView(mode: .constant(.letters)).frame(width: 340)
+        Divider()
+        VStack(spacing: 0) {
+            ExplainerView().frame(maxHeight: .infinity)
+            QuoteBar()
+        }
+    }
+    .frame(width: 1040, height: 700)
+    .environmentObject(controller)
+
+    let renderer = ImageRenderer(content: ui)
+    renderer.scale = 1
+    guard let image = renderer.nsImage,
+          let tiff = image.tiffRepresentation,
+          let rep = NSBitmapImageRep(data: tiff),
+          let png = rep.representation(using: .png, properties: [:]) else { return }
+    try? png.write(to: URL(fileURLWithPath: path))
+}

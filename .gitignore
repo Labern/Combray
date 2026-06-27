@@ -1,0 +1,17 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+DerivedData/
+
+# Build artifacts (the .pkg is attached to GitHub Releases, not committed)
+dist/
+*.xcuserstate
+*.xcuserdatad
+
+# Claude / editor
+.claude/
+
+# macOS
+.DS_Store
+
+# Local archive data lives in ~/Library/Application Support/Combray — never in the repo.
