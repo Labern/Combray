@@ -91,9 +91,9 @@ struct LetterDetailView: View {
 
     /// When the transcription pane is narrow, rows of fields/buttons stack vertically (responsive).
     private var stacked: Bool { paneWidth > 0 && paneWidth < 560 }
-    /// The big action buttons go in a row only when there's room for all of them; otherwise they
-    /// stack full-width so they stay big, equal-height, and never truncate.
-    private var actionsStacked: Bool { paneWidth > 0 && paneWidth < 700 }
+    /// Keep the action buttons HORIZONTAL; only stack them when the pane is genuinely tiny.
+    /// (Labels shrink-to-fit via BigButtonStyle's minimumScaleFactor so the row stays clean.)
+    private var actionsStacked: Bool { paneWidth > 0 && paneWidth < 340 }
 
     var body: some View {
         HSplitView {

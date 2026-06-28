@@ -56,6 +56,7 @@ struct BigButtonStyle: ButtonStyle {
         configuration.label
             .font(Theme.sans(compact ? 18 : 24, .semibold))
             .lineLimit(1)                         // never wrap → buttons in a row stay equal height
+            .minimumScaleFactor(0.6)              // shrink to fit so a row stays horizontal, not truncated
             .padding(.vertical, compact ? 13 : 20)
             .padding(.horizontal, compact ? 16 : 30)
             .frame(minHeight: compact ? 50 : 68)
