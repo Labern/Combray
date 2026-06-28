@@ -1,0 +1,127 @@
+import SwiftUI
+import AppKit
+import CoreImage
+import UniformTypeIdentifiers
+import CombrayCore
+
+// MARK: - Root
+
+enum SidebarMode: String, CaseIterable, Identifiable {
+    case letters = "Letters"
+    case people = "People"
+    case years = "Years"
+    case search = "Search"
+    var id: String { rawValue }
+}
+
+struct RootView: View {
+    @EnvironmentObject var c: ArchiveController
+    @State private var mode: SidebarMode = .letters
+    @AppStorage("darkMode") private var darkMode = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            NavigationSplitView {
+                SidebarView(mode: $mode)
+                    .navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 480)
+            } detail: {
+                DetailContainer()
+            }
+            .overlay(alignment: .bottom) { statusBar }
+            .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    if c.isTranscribing {
+                        TranscribeSpinner()
+                    } else if c.transcribedFlash {
+                        Label("Transcribed!", systemImage: "checkmark.circle.fill")
+                            .font(Theme.small).foregroundStyle(Theme.accent)
+                            .transition(.opacity.combined(with: .scale))
+                    }
+                    Button { openHelpDesk() } label: {
+                        Image(systemName: "questionmark.circle")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.accentDeep)
+                    }
+                    .help("Help — message Labern on WhatsApp")
+
+                    Button { withAnimation(.easeInOut(duration: 0.25)) { darkMode.toggle() } } label: {
+                        Image(systemName: darkMode ? "sun.max.fill" : "moon.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.accentDeep)
+                    }
+                    .help(darkMode ? "Switch to Light mode" : "Switch to Dark mode")
+                }
+            }
+
+            QuoteBar()
+        }
+        .background(Theme.bg)
+        .preferredColorScheme(darkMode ? .dark : .light)
+        .onAppear { installMadeleineDockIcon() }
+        .sheet(isPresented: $c.showAddChoice) { AddLetterSheet().environmentObject(c) }
+        .sheet(isPresented: $c.showCapture) { CaptureSheet().environmentObject(c) }
+        .sheet(isPresented: $c.showSignIn) { SignInSheet().environmentObject(c) }
+        .sheet(isPresented: $c.showSettings) { SettingsSheet().environmentObject(c) }
+    }
+
+    /// Opens the WhatsApp Mac app straight to a chat with Labern (the person this app is for).
+    /// UK 07476 897931 → international 447476897931 (no leading 0, no +). Falls back to wa.me.
+    private func openHelpDesk() {
+        let phone = "447476897931"
+        let text = "Combray question -- "
+        let q = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let app = URL(string: "whatsapp://send?phone=\(phone)&text=\(q)"),
+           NSWorkspace.shared.open(app) { return }
+        if let web = URL(string: "https://wa.me/\(phone)?text=\(q)") {
+            NSWorkspace.shared.open(web)   // fallback if the WhatsApp app isn't installed
+        }
+    }
+
+    @ViewBuilder private var statusBar: some View {
+        if let busy = c.busy {
+            HStack(spacing: 14) {
+                ProgressView().controlSize(.large)
+                Text(busy).font(Theme.big)
+            }
+            .padding(.horizontal, 26).padding(.vertical, 18)
+            .background(.regularMaterial, in: Capsule())
+            .padding(.bottom, 24)
+        } else if c.transcribedFlash {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill").font(.title2).foregroundStyle(Theme.accent)
+                Text("Transcribed!").font(Theme.big)
+            }
+            .padding(.horizontal, 26).padding(.vertical, 18)
+            .background(.regularMaterial, in: Capsule())
+            .padding(.bottom, 24)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if let err = c.errorText {
+            HStack(spacing: 14) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundStyle(.orange)
+                Text(err).font(Theme.body).lineLimit(2)
+                Button("Dismiss") { c.errorText = nil }.font(Theme.big)
+            }
+            .padding(.horizontal, 26).padding(.vertical, 18)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .padding(.bottom, 24).frame(maxWidth: 620)
+        }
+    }
+}
+
+/// A gold ring that spins continuously while a transcription is running.
+struct TranscribeSpinner: View {
+    @State private var spin = false
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Theme.accent)
+                .rotationEffect(.degrees(spin ? 360 : 0))
+                .animation(.linear(duration: 1.0).repeatForever(autoreverses: false), value: spin)
+            Text("Transcribing…").font(Theme.small).foregroundStyle(Theme.faint)
+        }
+        .onAppear { spin = true }
+        .transition(.opacity.combined(with: .scale))
+    }
+}
+
