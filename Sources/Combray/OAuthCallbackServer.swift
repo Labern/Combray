@@ -66,8 +66,7 @@ final class OAuthCallbackServer: @unchecked Sendable {
         <body style="font-family:-apple-system,system-ui;text-align:center;padding-top:90px;color:#1a1a1a">
         <h2>Signed in to Combray</h2><p>You can close this tab and return to the app.</p></body></html>
         """
-        let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(page.utf8.count)\r\nConnection: close\r\n\r\n\(page)"
-        conn.send(content: Data(response.utf8), completion: .contentProcessed { _ in conn.cancel() })
+        LocalHTTP.respond(conn, "200 OK", "text/html; charset=utf-8", Data(page.utf8))
         if !code.isEmpty { onCode?(code, state) }
     }
 }

@@ -25,7 +25,7 @@ final class WebServer: @unchecked Sendable {
     }
 
     var localURL: String { "http://localhost:\(port)/" }
-    var lanURL: String? { CaptureServer.wifiIPAddress().map { "http://\($0):\(port)/" } }
+    var lanURL: String? { LocalHTTP.wifiIPAddress().map { "http://\($0):\(port)/" } }
 
     func start() { queue.async { self.startLocked() } }
 
@@ -69,7 +69,7 @@ final class WebServer: @unchecked Sendable {
         let parts = firstLine.split(separator: " ")
         let path = parts.count > 1 ? String(parts[1]) : "/"
         let rawPath = path.split(separator: "?", maxSplits: 1).first.map(String.init) ?? "/"
-        let q = Self.query(path)
+        let q = LocalHTTP.query(path)
 
         if rawPath == "/" {
             respondHTML(conn, indexHTML())
@@ -78,7 +78,7 @@ final class WebServer: @unchecked Sendable {
         } else if rawPath == "/img", let rel = q["p"]?.removingPercentEncoding {
             serveImage(conn, relativePath: rel)
         } else {
-            respond(conn, "404 Not Found", "text/plain; charset=utf-8", Data("Not found".utf8))
+            LocalHTTP.respond(conn, "404 Not Found", "text/plain; charset=utf-8", Data("Not found".utf8))
         }
     }
 
@@ -87,31 +87,14 @@ final class WebServer: @unchecked Sendable {
         let root = images.root.standardizedFileURL
         let target = root.appendingPathComponent(relativePath).standardizedFileURL
         guard target.path.hasPrefix(root.path), let data = try? Data(contentsOf: target) else {
-            respond(conn, "404 Not Found", "text/plain", Data("no image".utf8)); return
+            LocalHTTP.respond(conn, "404 Not Found", "text/plain", Data("no image".utf8)); return
         }
         let type = target.pathExtension.lowercased() == "png" ? "image/png" : "image/jpeg"
-        respond(conn, "200 OK", type, data)
+        LocalHTTP.respond(conn, "200 OK", type, data)
     }
 
     private func respondHTML(_ conn: NWConnection, _ html: String) {
-        respond(conn, "200 OK", "text/html; charset=utf-8", Data(html.utf8))
-    }
-
-    private func respond(_ conn: NWConnection, _ status: String, _ type: String, _ body: Data) {
-        let head = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
-        var out = Data(head.utf8)
-        out.append(body)
-        conn.send(content: out, completion: .contentProcessed { _ in conn.cancel() })
-    }
-
-    private static func query(_ path: String) -> [String: String] {
-        guard let q = path.split(separator: "?", maxSplits: 1).dropFirst().first else { return [:] }
-        var out: [String: String] = [:]
-        for pair in q.split(separator: "&") {
-            let kv = pair.split(separator: "=", maxSplits: 1)
-            if kv.count == 2 { out[String(kv[0])] = String(kv[1]) }
-        }
-        return out
+        LocalHTTP.respond(conn, "200 OK", "text/html; charset=utf-8", Data(html.utf8))
     }
 
     // MARK: - Pages

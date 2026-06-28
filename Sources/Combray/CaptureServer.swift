@@ -1,6 +1,5 @@
 import Foundation
 import Network
-import Darwin
 
 /// A tiny local web server. The Mac shows a URL/QR; the iPhone opens it on the same Wi-Fi, takes
 /// photos of a letter, and uploads them — they arrive as a new letter. No companion app needed.
@@ -56,7 +55,7 @@ final class CaptureServer: @unchecked Sendable {
     }
 
     private func currentURL() -> String? {
-        guard let ip = Self.wifiIPAddress() else { return nil }
+        guard let ip = LocalHTTP.wifiIPAddress() else { return nil }
         return "http://\(ip):\(port)/"
     }
 
@@ -69,7 +68,7 @@ final class CaptureServer: @unchecked Sendable {
             if let data { buf.append(data) }
             if let sep = buf.range(of: Data("\r\n\r\n".utf8)) {
                 let header = String(decoding: buf[buf.startIndex..<sep.lowerBound], as: UTF8.self)
-                let length = Self.contentLength(header)
+                let length = LocalHTTP.contentLength(header)
                 let bodyStart = sep.upperBound
                 let available = buf.distance(from: bodyStart, to: buf.endIndex)
                 if available >= length {
@@ -89,28 +88,28 @@ final class CaptureServer: @unchecked Sendable {
         let parts = firstLine.split(separator: " ")
         let method = parts.first.map(String.init) ?? "GET"
         let path = parts.count > 1 ? String(parts[1]) : "/"
-        let q = Self.query(path)
+        let q = LocalHTTP.query(path)
 
         if method == "GET", path == "/" || path.hasPrefix("/?") {
-            respond(conn, "200 OK", "text/html; charset=utf-8", Data(Self.html.utf8))
+            LocalHTTP.respond(conn, "200 OK", "text/html; charset=utf-8", Data(Self.html.utf8))
         } else if method == "POST", path.hasPrefix("/upload") {
             let batch = q["b"] ?? "default"
             let index = Int(q["i"] ?? "0") ?? 0
             saveUpload(batch: batch, index: index, data: body)
-            respond(conn, "200 OK", "text/plain", Data("ok".utf8))
+            LocalHTTP.respond(conn, "200 OK", "text/plain", Data("ok".utf8))
         } else if method == "POST", path.hasPrefix("/done") {
             let batch = q["b"] ?? "default"
             let urls = (batches[batch] ?? []).sorted { $0.0 < $1.0 }.map { $0.1 }
             batches[batch] = nil
             statuses[batch] = "received"
             if !urls.isEmpty { onLetter?(batch, urls) }
-            respond(conn, "200 OK", "text/plain", Data("done".utf8))
+            LocalHTTP.respond(conn, "200 OK", "text/plain", Data("done".utf8))
         } else if method == "GET", path.hasPrefix("/status") {
             let batch = q["b"] ?? "default"
             let s = statuses[batch] ?? "none"
-            respond(conn, "200 OK", "application/json", Data("{\"status\":\"\(s)\"}".utf8))
+            LocalHTTP.respond(conn, "200 OK", "application/json", Data("{\"status\":\"\(s)\"}".utf8))
         } else {
-            respond(conn, "404 Not Found", "text/plain", Data("not found".utf8))
+            LocalHTTP.respond(conn, "404 Not Found", "text/plain", Data("not found".utf8))
         }
     }
 
@@ -122,58 +121,6 @@ final class CaptureServer: @unchecked Sendable {
         if (try? data.write(to: url)) != nil {
             batches[batch, default: []].append((index, url))
         }
-    }
-
-    private func respond(_ conn: NWConnection, _ status: String, _ type: String, _ body: Data) {
-        let head = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
-        var out = Data(head.utf8)
-        out.append(body)
-        conn.send(content: out, completion: .contentProcessed { _ in conn.cancel() })
-    }
-
-    // MARK: - Helpers
-
-    private static func contentLength(_ header: String) -> Int {
-        for line in header.split(separator: "\r\n") {
-            let lower = line.lowercased()
-            if lower.hasPrefix("content-length:") {
-                return Int(line.split(separator: ":", maxSplits: 1)[1].trimmingCharacters(in: .whitespaces)) ?? 0
-            }
-        }
-        return 0
-    }
-
-    private static func query(_ path: String) -> [String: String] {
-        guard let q = path.split(separator: "?", maxSplits: 1).dropFirst().first else { return [:] }
-        var out: [String: String] = [:]
-        for pair in q.split(separator: "&") {
-            let kv = pair.split(separator: "=", maxSplits: 1)
-            if kv.count == 2 { out[String(kv[0])] = String(kv[1]) }
-        }
-        return out
-    }
-
-    static func wifiIPAddress() -> String? {
-        var address: String?
-        var ifaddr: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return nil }
-        var ptr: UnsafeMutablePointer<ifaddrs>? = first
-        while let cur = ptr {
-            let flags = Int32(cur.pointee.ifa_flags)
-            if let sa = cur.pointee.ifa_addr, sa.pointee.sa_family == UInt8(AF_INET),
-               (flags & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING) {
-                let name = String(cString: cur.pointee.ifa_name)
-                if name == "en0" {
-                    var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                    getnameinfo(sa, socklen_t(sa.pointee.sa_len), &host,
-                                socklen_t(host.count), nil, 0, NI_NUMERICHOST)
-                    address = String(cString: host)
-                }
-            }
-            ptr = cur.pointee.ifa_next
-        }
-        freeifaddrs(ifaddr)
-        return address
     }
 
     static let html = """
