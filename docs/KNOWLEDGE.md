@@ -230,6 +230,34 @@ agents in one message** for **disjoint file-sets** (e.g. UI fixes in `LetterDeta
 people-dedup in `Archive.swift`+`ArchiveController.swift`), tell them NOT to build, then build/verify once
 yourself. Same-file edits CANNOT be safely parallelised; batch those into one turn instead.
 
+### More feature/UX changes (continued, on `refactor`)
+- **Right-click a page image** (in `LetterDetailView.pages`) → **Replace image…** (`replacePageWithPicker`,
+  opens NSOpenPanel, swaps the file keeping its slot) / **Delete image** (`deletePage`, removes file + record,
+  reindexes). **"Are you sure?" confirmations** for deleting an **image** AND a **letter** — driven by
+  `controller.pendingDeletePage` / `pendingDeleteLetter`, rendered as `.alert`s on `RootView`. The sidebar
+  "Delete letter" now sets `pendingDeleteLetter` instead of deleting immediately.
+- **Responsive sidebar font** — `SidebarView` measures its width (`GeometryReader` → `sidebarWidth`) and
+  shrinks the letter-title font: `titleFontSize = min(17, max(13, sidebarWidth * 0.047))`.
+- **Sidebar row layout** — under the title: a **`FROM → TO`** line (only when the letter has BOTH a sender and
+  a recipient) and the **date on its OWN line below**. Date is rendered in English by **`DateDisplay.pretty`**
+  (new CombrayCore util): `1st November, 1963` / `November 1963` / `1963` (correct ordinals; non-ISO passes
+  through). `Archive.allParticipants()` returns `[letterId: (sender, recipients)]` in one JOIN; the controller
+  builds `participantsByLetter: [String: (from:String?, to:String?)]` in `reload()`.
+- **`BigButtonStyle` now has `.lineLimit(1)`** (labels never wrap → buttons in a row are always equal height)
+  and a `compact` variant. The Chat/Copy/Export/Share row uses a width-gated layout
+  (`actionsStacked = paneWidth < 700`): a row when there's room, otherwise a clean full-width VStack so the
+  big buttons never truncate. (`stacked < 560` still controls the From/To/Date field row.)
+- **Dock icon** — inner madeleine padding `plate * 0.22 → 0.15` (madeleine sits a bit larger on the plate).
+  Set by `installMadeleineDockIcon()` on `RootView.onAppear`, so it refreshes on relaunch.
+- **Tests: 56 total.** Added `ArchiveExtendedTests` (merge-people, MAX-not-COUNT, NULLS-LAST ordering, cascade
+  delete, page ordering, participant re-index) and `DateDisplayTests` (pins month spellings + ordinals).
+  Stage D's full per-module plan is in `docs/test-plan-stageD.txt` — still being turned into cases.
+
+**Refactor branch commits (rollback granularity):** `a4ad922` baseline (Views split) · `695dbc8` LocalHTTP ·
+`7234504` sidebar/detail/people-dedup · `3bebdf6` KNOWLEDGE+choose-photos · `0179803` +16 tests ·
+`f604c00` image delete/replace+confirms · `52f4978` responsive/arrow/English-date · `93ee5f1` date-line/
+buttons/dock · (+ the big-button revert). `git checkout main` = pre-refactor state.
+
 ## Older — v0.10 (released to GitHub as the last public release)
 - **v0.10 — Web viewer.** `WebServer.swift` (app target): an `NWListener` HTTP server on **:8788** that serves a
   read-only, Combray-styled, browsable view of the archive — `/` index (cards + client-side instant search),

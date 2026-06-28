@@ -91,6 +91,9 @@ struct LetterDetailView: View {
 
     /// When the transcription pane is narrow, rows of fields/buttons stack vertically (responsive).
     private var stacked: Bool { paneWidth > 0 && paneWidth < 560 }
+    /// The big action buttons go in a row only when there's room for all of them; otherwise they
+    /// stack full-width so they stay big, equal-height, and never truncate.
+    private var actionsStacked: Bool { paneWidth > 0 && paneWidth < 700 }
 
     var body: some View {
         HSplitView {
@@ -254,24 +257,24 @@ struct LetterDetailView: View {
             }
             .buttonStyle(BigButtonStyle(fullWidth: true))
 
-            let actionsLayout = stacked
+            let actionsLayout = actionsStacked
                 ? AnyLayout(VStackLayout(spacing: 12))
                 : AnyLayout(HStackLayout(spacing: 12))
             actionsLayout {
                 if c.correspondence(forLetter: letter.id).count > 1 {
                     Button { showChat = true } label: {
                         Label("Chat", systemImage: "bubble.left.and.bubble.right")
-                    }.buttonStyle(BigButtonStyle(filled: false, fullWidth: true, compact: true))
+                    }.buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
                 }
                 Button { copyTranscript() } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                 }
-                .buttonStyle(BigButtonStyle(filled: false, fullWidth: true, compact: true))
+                .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
                 .disabled(letter.transcription.isEmpty)
                 Button { c.exportDOCX(letter) } label: { Label("Export", systemImage: "doc.richtext") }
-                    .buttonStyle(BigButtonStyle(filled: false, fullWidth: true, compact: true))
+                    .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
                 Button { c.shareViaGmail(letter) } label: { Label("Share", systemImage: "paperplane") }
-                    .buttonStyle(BigButtonStyle(filled: false, fullWidth: true, compact: true))
+                    .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
             }
 
             if copied {
