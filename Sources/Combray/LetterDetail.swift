@@ -149,6 +149,14 @@ struct LetterDetailView: View {
                             .frame(maxWidth: .infinity)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+                            .contextMenu {
+                                Button { c.replacePageWithPicker(page) } label: {
+                                    Label("Replace image…", systemImage: "photo.on.rectangle")
+                                }
+                                Button(role: .destructive) { c.pendingDeletePage = page } label: {
+                                    Label("Delete image", systemImage: "trash")
+                                }
+                            }
                     }
                 }
                 if c.pages.isEmpty {

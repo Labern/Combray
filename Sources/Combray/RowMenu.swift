@@ -72,7 +72,7 @@ struct LetterActionsMenu: View {
             item("Export as .docx", "doc.richtext") { c.exportDOCX(letter) }
             item("Reveal in Finder", "folder") { c.revealInFinder(letter) }
             Divider().padding(.vertical, 5)
-            item("Delete letter", "trash", destructive: true) { c.deleteLetter(letter) }
+            item("Delete letter", "trash", destructive: true) { c.pendingDeleteLetter = letter }
         }
         .padding(8)
         .frame(width: 320)

@@ -62,6 +62,20 @@ struct RootView: View {
         .sheet(isPresented: $c.showCapture) { CaptureSheet().environmentObject(c) }
         .sheet(isPresented: $c.showSignIn) { SignInSheet().environmentObject(c) }
         .sheet(isPresented: $c.showSettings) { SettingsSheet().environmentObject(c) }
+        .alert("Delete this letter?", isPresented: Binding(
+            get: { c.pendingDeleteLetter != nil },
+            set: { if !$0 { c.pendingDeleteLetter = nil } }
+        ), presenting: c.pendingDeleteLetter) { letter in
+            Button("Delete", role: .destructive) { c.deleteLetter(letter); c.pendingDeleteLetter = nil }
+            Button("Cancel", role: .cancel) { c.pendingDeleteLetter = nil }
+        } message: { _ in Text("Are you sure? This moves the letter and its images to the Trash.") }
+        .alert("Delete this image?", isPresented: Binding(
+            get: { c.pendingDeletePage != nil },
+            set: { if !$0 { c.pendingDeletePage = nil } }
+        ), presenting: c.pendingDeletePage) { page in
+            Button("Delete", role: .destructive) { c.deletePage(page); c.pendingDeletePage = nil }
+            Button("Cancel", role: .cancel) { c.pendingDeletePage = nil }
+        } message: { _ in Text("Are you sure? This removes this page image. The other pages stay.") }
     }
 
     /// Opens the WhatsApp Mac app straight to a chat with Labern (the person this app is for).

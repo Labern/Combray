@@ -366,6 +366,44 @@ final class ArchiveController: ObservableObject {
         } catch { errorText = error.localizedDescription }
     }
 
+    // MARK: - Page editing + delete confirmations
+
+    /// A letter awaiting an "Are you sure?" confirmation before deletion (set by the sidebar menu).
+    @Published var pendingDeleteLetter: Letter?
+    /// A page image awaiting an "Are you sure?" confirmation before deletion (set by the image menu).
+    @Published var pendingDeletePage: Page?
+
+    /// Removes one page image (its file + record), reindexes the rest, updates the folder backup.
+    func deletePage(_ page: Page) {
+        try? FileManager.default.removeItem(at: images.url(for: page))
+        var remaining = ((try? archive.pages(forLetterId: page.letterId)) ?? []).filter { $0.id != page.id }
+        for i in remaining.indices { remaining[i].pageIndex = i }
+        try? archive.setPages(remaining, forLetterId: page.letterId)
+        backup(page.letterId)
+        if selectedLetterID == page.letterId { loadDetail() }
+    }
+
+    /// Opens a file picker and replaces one page's image with the chosen file (keeping its position).
+    func replacePageWithPicker(_ page: Page) {
+        guard let letter = letters.first(where: { $0.id == page.letterId }) else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? FileManager.default.removeItem(at: images.url(for: page))
+        guard let newPage = try? images.importImage(from: url, letterId: page.letterId,
+                                                     letterNumber: letter.number, index: page.pageIndex) else { return }
+        var pages = (try? archive.pages(forLetterId: page.letterId)) ?? []
+        if let i = pages.firstIndex(where: { $0.id == page.id }) {
+            pages[i].imagePath = newPage.imagePath
+            pages[i].width = newPage.width
+            pages[i].height = newPage.height
+        }
+        try? archive.setPages(pages, forLetterId: page.letterId)
+        backup(page.letterId)
+        if selectedLetterID == page.letterId { loadDetail() }
+    }
+
     // MARK: - Editing
 
     func saveTranscription(_ text: String) {
