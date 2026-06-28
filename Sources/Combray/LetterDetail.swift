@@ -41,8 +41,11 @@ struct ExplainerView: View {
             Button { c.startCapture() } label: { Label("Take photos with iPhone", systemImage: "iphone") }
                 .buttonStyle(BigButtonStyle())
                 .padding(.top, 4)
-            Button { c.pickAndImport() } label: { Label("Choose photos from this Mac", systemImage: "photo.on.rectangle") }
-                .buttonStyle(BigButtonStyle(filled: false))
+            Button { c.pickAndImport() } label: {
+                Label("Choose photos from this Mac", systemImage: "photo.on.rectangle")
+                    .lineLimit(1).fixedSize()
+            }
+            .buttonStyle(BigButtonStyle(filled: false))
             Text("or drag photos of a letter here")
                 .font(Theme.small).foregroundStyle(Theme.faint)
             if !c.hasAPIKey {

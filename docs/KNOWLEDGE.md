@@ -156,7 +156,81 @@ the **Dock/app icon** = madeleine on an off-white rounded plate with a transpare
 - Re-transcribe overwrites `transcription` but `aiTranscription` keeps the **first** output; to restore:
   `UPDATE letter SET transcription = aiTranscription WHERE number = N;` (app stopped), then fix `letter.json`.
 
-## Current state / next — v0.10 (released)
+## Current state — code-quality refactor in progress (UNRELEASED, on git branch `refactor`)
+
+**Working mode: FAST ITERATION.** Per the user (2026-06-28): during feature sprints do NOT run the release
+pipeline — no `gh release`, no `.pkg`, no Homebrew cask, no README edits, no version bumps, and don't run
+`swift test` every turn. Just `swift build` → copy binary into `.build/Combray.app` → `codesign --force
+--deep --sign -` → `pkill -9 -x Combray; open .build/Combray.app` (or reinstall to /Applications). Resume the
+full pipeline only when the user says "we're shipping". (See memory `combray-fast-iteration-mode`.)
+
+**GIT (new this session).** `~/Combray` is NOW a local git repo (`git init` done this session). Baseline
+commit `a4ad922` on **`main`** = the pre-refactor rollback point. Work happens on branch **`refactor`**.
+**No remote is configured** — it is NOT connected to GitHub. The GitHub repo `Labern/Combray` has only the
+**stale v0.1 source** (its newest source commit is the initial push) + the release `.pkg` artifacts; none of
+this session's source was ever pushed (releases used the API, not `git push`). `.gitignore` excludes
+`.build/`, `dist/`, `.DS_Store`, `Claude_Proposal.md`. Rollback any time: `git checkout main`. Pushing source
+to GitHub is PARKED until the user says so.
+
+**Repo `CLAUDE.md`** (new) = user-provided behavioral guidelines: Think Before Coding (surface assumptions,
+don't pick silently), Simplicity First (no abstractions for single-use code), Surgical Changes (only touch
+what's needed, don't refactor what isn't broken, remove only orphans *your* change created), Goal-Driven
+Execution (verifiable success criteria). `Claude_Proposal.md` (gitignored) = a general any-app CLAUDE.md draft.
+
+### The refactor (branch `refactor`) — each stage proven IDENTICAL before commit
+Verification harness for "behaviour + typography stay identical":
+- **`Combray --render <png>`** → a home-screen snapshot; compare its **sha256** to a baseline (was
+  `291f4261…` at 2 letters). **GOTCHA:** the render mock's sidebar list is a `LazyVStack` → its letter ROWS do
+  NOT materialise in `ImageRenderer`; the render only proves the chrome + footer count + Explainer + QuoteBar.
+  So the render baseline legitimately changes when the letter COUNT changes or sidebar chrome changes.
+- **`Combray --serve`** (capture server :8787) and **`Combray --web`** (web viewer :8788, `runWebServerHeadless`)
+  → `curl` the served pages and `diff` byte-for-byte against the `main` branch (the gold-standard web check).
+- `swift build` clean; `swift test` at checkpoints.
+
+- **Stage A (done, render-identical, in `a4ad922`):** split the 1,246-line `Views.swift` monolith into
+  **9 files** by `// MARK:` section (pure line-range move, byte-identical code): `Views.swift` (Root + RootView
+  + TranscribeSpinner), `Sidebar.swift`, `LetterDetail.swift`, `Conversation.swift` (Chat + PersonDetail),
+  `Settings.swift`, `QuoteBar.swift`, `RowMenu.swift` (incl. SpeechBubble), `Components.swift`, `Sheets.swift`.
+- **Stage B (done, served-output byte-identical, commit `695dbc8`):** extracted **`LocalHTTP.swift`** — shared
+  `respond` / `query` / `contentLength` / `wifiIPAddress` for `CaptureServer` / `WebServer` /
+  `OAuthCallbackServer`; removed each server's copy. (`init(cString:)` deprecation warning moved verbatim from
+  CaptureServer — DO NOT "fix" it: `String(decoding:)` would NOT null-truncate and would break the IP string.)
+- **Stage C: SKIPPED on purpose** — capture page and viewer have intentionally different CSS token sets
+  (different `--radius`, extra gradient tokens); sharing would break identical-output or over-engineer.
+- **Stage D (test suite): test PLANS generated, NOT yet assembled.** A background Workflow (`wmxc5shor`, 10
+  agents) produced an exhaustive per-module test plan + a dead-code/typo audit, saved to
+  **`docs/test-plan-stageD.txt`** (3,776 lines). NEXT STEP after compaction: turn those plans into XCTest cases
+  in `Tests/CombrayCoreTests/`, run `swift test` to green, commit. (CombrayCoreTests already has 33 tests; only
+  CombrayCore is unit-testable — the executable target's logic like `LocalHTTP`/`looksLikePlanLimit` isn't,
+  unless extracted.)
+
+### Feature/UX changes this session (on `refactor`, committed `7234504` + the Choose-photos tweak)
+- **Document-type-aware titles** — the transcription title is a short *description of what the doc is* (from→to,
+  drawn from the same understanding as the summary); only "Letter to X from Y" when it's genuinely a letter.
+  Schema gained `document_type`; `Archive.composedTitle(documentType:…)` is the no-title fallback.
+- **Sidebar letter titles wrap** fully at **17pt** (`.fixedSize(horizontal:false, vertical:true)`, no `lineLimit`).
+- **Detail title wraps** — `TextField("Title", text:$titleText, axis:.vertical)`, font size kept at **26**.
+- **Transcription now auto-fills** Title/From/To/Date in the detail view — root cause was that the `@State`
+  fields only synced on `.onAppear`/`letter.id` change; fix = `.onChange(of: letter.updatedAt) { if focus==nil
+  { syncFields() } }` (transcription bumps `updatedAt` + updates participants, so the fields refresh).
+- **Resize-safe split** — widening the sidebar used to overflow the detail (detail could shrink below the
+  HSplitView's 320+440 mins). Fix: `pages.frame(minWidth:220)`, `transcript.frame(minWidth:300)`, sidebar
+  `navigationSplitViewColumnWidth(min:300, ideal:360, max:440)`.
+- **People de-duplication** — `Archive.mergeDuplicatePeople()` folds clearly-duplicate people (e.g. "labern" &
+  "labern (user)") into one. Normalises (lowercase, strip `(...)`, strip non-alphanumerics, collapse spaces),
+  groups, picks canonical (no-paren > shortest > alphabetical), re-points `letterPerson` via
+  `UPDATE OR IGNORE … SET personId` then deletes the dup (cascade clears leftovers). Called in controller
+  `init()` (after `importFromFiles`) and in `reload()` (so the People tab is always deduped — note: `reload()`
+  is now a write path, runs a near-empty scan after the first pass).
+- **"Choose photos from this Mac"** button forced to one line (`.lineLimit(1).fixedSize()` on its Label).
+
+### Parallelism note
+The user repeatedly wants sub-agents used for independent work. Pattern that worked: spawn **2 general-purpose
+agents in one message** for **disjoint file-sets** (e.g. UI fixes in `LetterDetail.swift`+`Views.swift` vs
+people-dedup in `Archive.swift`+`ArchiveController.swift`), tell them NOT to build, then build/verify once
+yourself. Same-file edits CANNOT be safely parallelised; batch those into one turn instead.
+
+## Older — v0.10 (released to GitHub as the last public release)
 - **v0.10 — Web viewer.** `WebServer.swift` (app target): an `NWListener` HTTP server on **:8788** that serves a
   read-only, Combray-styled, browsable view of the archive — `/` index (cards + client-side instant search),
   `/l?id=<id>` detail (image↔transcription split + summary + quotes + meta), `/img?p=<relPath>` (images,
