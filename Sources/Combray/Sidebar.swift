@@ -9,6 +9,7 @@ import CombrayCore
 struct SidebarView: View {
     @EnvironmentObject var c: ArchiveController
     @Binding var mode: SidebarMode
+    @State private var sidebarWidth: CGFloat = 360
 
     var body: some View {
         VStack(spacing: Theme.gap) {
@@ -48,6 +49,11 @@ struct SidebarView: View {
             sidebarFooter
         }
         .background(Theme.bg)
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { sidebarWidth = g.size.width }
+                .onChange(of: g.size.width) { _, w in sidebarWidth = w }
+        })
     }
 
     /// Bottom strip: a Settings cog (bottom-left) + how many letters (or "Showing X of Y" in search).
@@ -132,10 +138,15 @@ struct SidebarView: View {
 
     /// A tappable letter row with the big right-click action popover attached.
     @ViewBuilder private func letterRowItem(_ letter: Letter) -> some View {
+        let parts = c.participantsByLetter[letter.id]
         SidebarRow(letter: letter, onOpen: { c.showLetter(letter.id) }) {
-            LetterRow(letter: letter, selected: c.selectedLetterID == letter.id)
+            LetterRow(letter: letter, selected: c.selectedLetterID == letter.id,
+                      titleSize: titleFontSize, from: parts?.from, to: parts?.to)
         }
     }
+
+    /// Letter-title font shrinks as the sidebar is narrowed (dragged left).
+    private var titleFontSize: CGFloat { min(17, max(13, sidebarWidth * 0.047)) }
 }
 
 struct ModeSelector: View {
@@ -162,6 +173,21 @@ struct ModeSelector: View {
 struct LetterRow: View {
     let letter: Letter
     var selected: Bool
+    var titleSize: CGFloat = 17
+    var from: String? = nil
+    var to: String? = nil
+
+    /// "FROM → TO  |  DATE" when both a sender and recipient exist; otherwise just the (pretty) date.
+    private var subtitle: String {
+        let date = DateDisplay.pretty(letter.dateValue)
+        let f = from?.trimmingCharacters(in: .whitespaces)
+        let t = to?.trimmingCharacters(in: .whitespaces)
+        if let f, !f.isEmpty, let t, !t.isEmpty {
+            return date.map { "\(f) → \(t)  |  \($0)" } ?? "\(f) → \(t)"
+        }
+        return date ?? "—"
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             if letter.pinned {
@@ -174,9 +200,10 @@ struct LetterRow: View {
             MadeleineIcon().frame(width: 30, height: 30).opacity(0.9)
             VStack(alignment: .leading, spacing: 4) {
                 Text(letter.title ?? "Untitled letter")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: titleSize, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
-                Text(letter.dateValue ?? "—").font(Theme.small).foregroundStyle(Theme.faint).lineLimit(1)
+                Text(subtitle).font(.system(size: max(11, titleSize - 3)))
+                    .foregroundStyle(Theme.faint).lineLimit(1)
             }
             Spacer(minLength: 0)
         }

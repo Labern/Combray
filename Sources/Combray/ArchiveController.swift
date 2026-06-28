@@ -44,6 +44,8 @@ final class ArchiveController: ObservableObject {
     @Published var letters: [Letter] = []
     @Published var people: [Person] = []
     @Published var years: [Int] = []
+    /// letterId → display names of (sender, recipients-joined) for the sidebar rows.
+    @Published var participantsByLetter: [String: (from: String?, to: String?)] = [:]
 
     // Current selection + its loaded detail
     @Published var selectedLetterID: String?
@@ -177,6 +179,10 @@ final class ArchiveController: ObservableObject {
             letters = try archive.allLetters()
             people = try archive.people()
             years = try archive.years()
+            let raw = (try? archive.allParticipants()) ?? [:]
+            participantsByLetter = raw.mapValues {
+                (from: $0.sender, to: $0.recipients.isEmpty ? nil : $0.recipients.joined(separator: ", "))
+            }
         } catch { errorText = error.localizedDescription }
     }
 

@@ -119,6 +119,27 @@ public struct Archive: Sendable {
         }
     }
 
+    /// Every letter's participants in one query, for list display without per-row fetches.
+    public func allParticipants() throws -> [String: (sender: String?, recipients: [String])] {
+        try reader.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT lp.letterId AS lid, lp.role AS role, p.displayName AS name
+                FROM letterPerson lp JOIN person p ON p.id = lp.personId
+                ORDER BY p.displayName
+                """)
+            var out: [String: (sender: String?, recipients: [String])] = [:]
+            for r in rows {
+                let lid: String = r["lid"]
+                let role: String = r["role"]
+                let name: String = r["name"]
+                var entry = out[lid] ?? (sender: nil, recipients: [])
+                if role == "sender" { entry.sender = name } else { entry.recipients.append(name) }
+                out[lid] = entry
+            }
+            return out
+        }
+    }
+
     /// Folds clearly-duplicate people (e.g. "labern" and "labern (user)") into one entity, keeping the
     /// simplest name and re-pointing every letter's participants at it.
     public func mergeDuplicatePeople() throws {
