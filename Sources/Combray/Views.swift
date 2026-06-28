@@ -23,7 +23,7 @@ struct RootView: View {
         VStack(spacing: 0) {
             NavigationSplitView {
                 SidebarView(mode: $mode)
-                    .navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 480)
+                    .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 440)
             } detail: {
                 DetailContainer()
             }

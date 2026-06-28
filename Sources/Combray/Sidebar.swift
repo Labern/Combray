@@ -174,7 +174,8 @@ struct LetterRow: View {
             MadeleineIcon().frame(width: 30, height: 30).opacity(0.9)
             VStack(alignment: .leading, spacing: 4) {
                 Text(letter.title ?? "Untitled letter")
-                    .font(.system(size: 19, weight: .semibold)).lineLimit(1)
+                    .font(.system(size: 17, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(letter.dateValue ?? "—").font(Theme.small).foregroundStyle(Theme.faint).lineLimit(1)
             }
             Spacer(minLength: 0)

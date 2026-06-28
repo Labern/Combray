@@ -119,6 +119,44 @@ public struct Archive: Sendable {
         }
     }
 
+    /// Folds clearly-duplicate people (e.g. "labern" and "labern (user)") into one entity, keeping the
+    /// simplest name and re-pointing every letter's participants at it.
+    public func mergeDuplicatePeople() throws {
+        try dbWriter.write { db in
+            let all = try Person.fetchAll(db)
+            func norm(_ s: String) -> String {
+                var t = s.lowercased()
+                while let o = t.firstIndex(of: "("), let c = t[o...].firstIndex(of: ")") {
+                    t.removeSubrange(o...c)
+                }
+                t = t.replacingOccurrences(of: "[^a-z0-9 ]", with: " ", options: .regularExpression)
+                return t.split(separator: " ").joined(separator: " ")
+            }
+            var groups: [String: [Person]] = [:]
+            for p in all {
+                let key = norm(p.displayName)
+                guard !key.isEmpty else { continue }
+                groups[key, default: []].append(p)
+            }
+            for (_, members) in groups where members.count > 1 {
+                // canonical = prefer no-parenthesis, then shortest, then alphabetical
+                let canonical = members.sorted { a, b in
+                    let ap = a.displayName.contains("("), bp = b.displayName.contains("(")
+                    if ap != bp { return !ap }
+                    if a.displayName.count != b.displayName.count { return a.displayName.count < b.displayName.count }
+                    return a.displayName < b.displayName
+                }.first!
+                for dup in members where dup.id != canonical.id {
+                    // move this person's letter roles onto the canonical (skip roles that already exist)
+                    try db.execute(sql: "UPDATE OR IGNORE letterPerson SET personId = ? WHERE personId = ?",
+                                   arguments: [canonical.id, dup.id])
+                    // deleting the dup cascades away any leftover duplicate roles + relationships
+                    _ = try Person.deleteOne(db, key: dup.id)
+                }
+            }
+        }
+    }
+
     /// Finds a person by exact display name, or creates one. (Smarter entity resolution later.)
     @discardableResult
     public func findOrCreatePerson(named name: String) throws -> Person {

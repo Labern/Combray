@@ -91,12 +91,13 @@ struct LetterDetailView: View {
 
     var body: some View {
         HSplitView {
-            pages.frame(minWidth: 320)
-            transcript.frame(minWidth: 440)
+            pages.frame(minWidth: 220)
+            transcript.frame(minWidth: 300)
         }
         .onAppear(perform: syncFields)
         .onChange(of: letter.id) { _, _ in isEditing = false; syncFields() }
         .onChange(of: focus) { oldValue, _ in saveField(oldValue) }
+        .onChange(of: letter.updatedAt) { _, _ in if focus == nil { syncFields() } }
         .sheet(isPresented: $showChat) { ChatSheet(letterID: letter.id).environmentObject(c) }
     }
 
@@ -159,7 +160,7 @@ struct LetterDetailView: View {
     private var transcript: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.gap) {
-                TextField("Title", text: $titleText)
+                TextField("Title", text: $titleText, axis: .vertical)
                     .font(.system(size: 26, weight: .semibold)).textFieldStyle(.plain)
                     .focused($focus, equals: .title)
                     .onSubmit { focus = nil }

@@ -105,6 +105,7 @@ final class ArchiveController: ObservableObject {
         }
         // Folders are the source of truth — rebuild any missing index rows from disk.
         try? archive.importFromFiles(Backup.scan(lettersDir: store.lettersDir))
+        try? archive.mergeDuplicatePeople()
         reload()
 
         capture.onURL = { [weak self] url in Task { @MainActor in self?.captureURL = url } }
@@ -172,6 +173,7 @@ final class ArchiveController: ObservableObject {
 
     func reload() {
         do {
+            try? archive.mergeDuplicatePeople()
             letters = try archive.allLetters()
             people = try archive.people()
             years = try archive.years()
