@@ -50,13 +50,15 @@ enum Theme {
 struct BigButtonStyle: ButtonStyle {
     var filled: Bool = true
     var fullWidth: Bool = false
+    var compact: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(Theme.sans(24, .semibold))
-            .padding(.vertical, 20)
-            .padding(.horizontal, 30)
-            .frame(minHeight: 68)
+            .font(Theme.sans(compact ? 18 : 24, .semibold))
+            .lineLimit(1)                         // never wrap → buttons in a row stay equal height
+            .padding(.vertical, compact ? 13 : 20)
+            .padding(.horizontal, compact ? 16 : 30)
+            .frame(minHeight: compact ? 50 : 68)
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .foregroundStyle(filled ? Color.white : Theme.accentDeep)
             .background(
@@ -275,7 +277,7 @@ func installMadeleineDockIcon() {
     let icon = ZStack {
         RoundedRectangle(cornerRadius: plate * 0.2237, style: .continuous)
             .fill(Color(red: 0.99, green: 0.975, blue: 0.94))
-        MadeleineMark().padding(plate * 0.22)
+        MadeleineMark().padding(plate * 0.15)
     }
     .frame(width: plate, height: plate)
     .frame(width: side, height: side)

@@ -261,19 +261,17 @@ struct LetterDetailView: View {
                 if c.correspondence(forLetter: letter.id).count > 1 {
                     Button { showChat = true } label: {
                         Label("Chat", systemImage: "bubble.left.and.bubble.right")
-                    }.buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
+                    }.buttonStyle(BigButtonStyle(filled: false, fullWidth: true, compact: true))
                 }
                 Button { copyTranscript() } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .lineLimit(1)
-                        .fixedSize()
                 }
-                .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
+                .buttonStyle(BigButtonStyle(filled: false, fullWidth: true, compact: true))
                 .disabled(letter.transcription.isEmpty)
                 Button { c.exportDOCX(letter) } label: { Label("Export", systemImage: "doc.richtext") }
-                    .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
+                    .buttonStyle(BigButtonStyle(filled: false, fullWidth: true, compact: true))
                 Button { c.shareViaGmail(letter) } label: { Label("Share", systemImage: "paperplane") }
-                    .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
+                    .buttonStyle(BigButtonStyle(filled: false, fullWidth: true, compact: true))
             }
 
             if copied {

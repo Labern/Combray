@@ -177,15 +177,12 @@ struct LetterRow: View {
     var from: String? = nil
     var to: String? = nil
 
-    /// "FROM → TO  |  DATE" when both a sender and recipient exist; otherwise just the (pretty) date.
-    private var subtitle: String {
-        let date = DateDisplay.pretty(letter.dateValue)
+    /// "FROM → TO" when both a sender and recipient exist, else nil (then only the date shows).
+    private var correspondents: String? {
         let f = from?.trimmingCharacters(in: .whitespaces)
         let t = to?.trimmingCharacters(in: .whitespaces)
-        if let f, !f.isEmpty, let t, !t.isEmpty {
-            return date.map { "\(f) → \(t)  |  \($0)" } ?? "\(f) → \(t)"
-        }
-        return date ?? "—"
+        if let f, !f.isEmpty, let t, !t.isEmpty { return "\(f) → \(t)" }
+        return nil
     }
 
     var body: some View {
@@ -202,7 +199,12 @@ struct LetterRow: View {
                 Text(letter.title ?? "Untitled letter")
                     .font(.system(size: titleSize, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
-                Text(subtitle).font(.system(size: max(11, titleSize - 3)))
+                if let correspondents {
+                    Text(correspondents).font(.system(size: max(11, titleSize - 3)))
+                        .foregroundStyle(Theme.faint).lineLimit(1)
+                }
+                Text(DateDisplay.pretty(letter.dateValue) ?? "—")
+                    .font(.system(size: max(11, titleSize - 3)))
                     .foregroundStyle(Theme.faint).lineLimit(1)
             }
             Spacer(minLength: 0)
