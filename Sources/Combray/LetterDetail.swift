@@ -262,11 +262,7 @@ struct LetterDetailView: View {
                     Text("Not transcribed yet — press Transcribe above.")
                         .font(Theme.body).foregroundStyle(Theme.faint).italic()
                 } else {
-                    Text(letter.transcription)
-                        .font(.system(size: 19))
-                        .lineSpacing(8)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    transcriptionView
                     HStack(spacing: 12) {
                         Button { showAsk = true } label: {
                             Label("Ask about the transcription", systemImage: "text.bubble")
@@ -306,6 +302,31 @@ struct LetterDetailView: View {
             })
         }
         .background(Theme.bg)
+    }
+
+    /// The transcription, rendered for reading. Letters & written documents get the neat reflowed
+    /// "letter view" (paragraphs are paragraphs, no early wrapping, capped reading width); computer
+    /// screenshots / code keep their exact whitespace as transcribed.
+    @ViewBuilder private var transcriptionView: some View {
+        if TextReflow.isLayoutSignificant(letter.documentType) {
+            Text(letter.transcription)                    // screenshots / code — kept exactly as is now
+                .font(.system(size: 19))
+                .lineSpacing(8)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: 16) {
+                ForEach(Array(TextReflow.paragraphs(letter.transcription).enumerated()), id: \.offset) { _, para in
+                    Text(para)
+                        .font(Theme.serif(20))
+                        .lineSpacing(9)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: 680, alignment: .leading)   // a comfortable reading measure
+        }
     }
 
     private var actions: some View {

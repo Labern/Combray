@@ -28,6 +28,8 @@ public struct LetterFile: Codable, Sendable {
     public var from: String?
     public var to: [String]
     public var summary: String?
+    /// What the document is ("letter", "screenshot", …) — optional/additive; absent in old records.
+    public var documentType: String?
     public var meta: MetaInfo
     public var transcription: String
     public var aiTranscription: String?

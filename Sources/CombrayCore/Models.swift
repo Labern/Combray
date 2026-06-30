@@ -94,6 +94,10 @@ public struct Letter: Codable, Identifiable, Hashable, Sendable {
     public var notes: String?
     /// A short content summary, shown on every letter view.
     public var summary: String?
+    /// What the document is — "letter", "postcard", "screenshot", … Drives the neat letter-view
+    /// formatting (prose is reflowed; screenshots/code keep exact whitespace). Optional & additive:
+    /// absent in records written by older app versions (then defaults to the reflowed view).
+    public var documentType: String?
     // Hidden "meta" scan — details intelligently inferred from the letter's contents.
     public var metaLocation: String?
     public var metaRelationship: String?
@@ -117,6 +121,7 @@ public struct Letter: Codable, Identifiable, Hashable, Sendable {
                 aiTranscription: String? = nil,
                 notes: String? = nil,
                 summary: String? = nil,
+                documentType: String? = nil,
                 metaLocation: String? = nil,
                 metaRelationship: String? = nil,
                 metaRelationshipState: String? = nil,
@@ -136,6 +141,7 @@ public struct Letter: Codable, Identifiable, Hashable, Sendable {
         self.aiTranscription = aiTranscription
         self.notes = notes
         self.summary = summary
+        self.documentType = documentType
         self.metaLocation = metaLocation
         self.metaRelationship = metaRelationship
         self.metaRelationshipState = metaRelationshipState

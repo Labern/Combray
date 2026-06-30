@@ -100,6 +100,15 @@ public final class AppDatabase: Sendable {
             }
         }
 
+        // Additive: records the document type ("letter", "screenshot", …) so prose can be reflowed
+        // into a neat letter view while screenshots/code keep their exact whitespace. Nullable; the
+        // DB is a rebuildable cache, so old archives just repopulate this from their letter.json.
+        migrator.registerMigration("v2-documentType") { db in
+            try db.alter(table: "letter") { t in
+                t.add(column: "documentType", .text)
+            }
+        }
+
         return migrator
     }
 }

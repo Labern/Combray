@@ -270,6 +270,7 @@ public struct Archive: Sendable {
                                   recipients: r.recipients, summary: r.summary)
             ?? letter.title
         letter.summary = Self.clean(r.summary)
+        letter.documentType = Self.clean(r.document_type)
         letter.dateValue = Self.clean(r.date.value)
         letter.dateYear = Self.year(from: r.date.value)
         letter.dateSource = DateSource(rawValue: r.date.source) ?? .unknown
@@ -334,6 +335,7 @@ public struct Archive: Sendable {
             from: parties.sender?.displayName,
             to: parties.recipients.map(\.displayName),
             summary: letter.summary,
+            documentType: letter.documentType,
             meta: .init(location: letter.metaLocation,
                         relationship: letter.metaRelationship,
                         relationshipState: letter.metaRelationshipState,
@@ -363,7 +365,7 @@ public struct Archive: Sendable {
                 dateSource: DateSource(rawValue: f.date.source) ?? .unknown,
                 dateConfidence: f.date.confidence.flatMap(Confidence.init(rawValue:)),
                 transcription: f.transcription, aiTranscription: f.aiTranscription,
-                summary: f.summary,
+                summary: f.summary, documentType: f.documentType,
                 metaLocation: f.meta.location, metaRelationship: f.meta.relationship,
                 metaRelationshipState: f.meta.relationshipState, metaWriterGoals: f.meta.writerGoals,
                 notableQuotes: (f.notableQuotes?.isEmpty ?? true) ? nil : f.notableQuotes?.joined(separator: "\n"),
