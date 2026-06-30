@@ -483,13 +483,41 @@ folders. Settings (`ownerName`, `ownerProfile`, etc.) live in UserDefaults, not 
   Contents/MacOS/Combray` → `PlistBuddy Set :CFBundleShortVersionString/:CFBundleVersion X` →
   `codesign --force --deep --sign - .build/Combray.app` → stage to `dist/stage/Applications/
   Combray.app` → `pkgbuild --root dist/stage --install-location / --identifier com.labern.combray
-  --version X dist/Combray.pkg` → `shasum -a 256` → `gh release create vX dist/Combray.pkg`
-  (or `gh release upload vX dist/Combray.pkg --clobber`) → update tap `Labern/homebrew-combray`
+  --version X dist/Combray.pkg` → **also zip the signed app: `ditto -c -k --keepParent
+  .build/Combray.app dist/Combray.zip`** → `shasum -a 256` → `gh release create vX dist/Combray.pkg
+  dist/Combray.zip` (or `gh release upload vX … --clobber`) → update tap `Labern/homebrew-combray`
   `Casks/combray.rb` (`version` + `sha256`) via `gh api -X PUT … contents/Casks/combray.rb`.
+- **The `Combray.zip` asset is REQUIRED for the in-app auto-updater** (see below). It's the same
+  signed `.app` as the `.pkg`, just zipped with `--keepParent` so it unzips to `Combray.app`. A
+  release missing the zip simply can't self-update (the updater stays silent); the `.pkg`/Homebrew
+  paths still work. Keep shipping both.
 - **GOTCHA:** `releases/latest/download/Combray.pkg` is **CDN-cached** (lags minutes after a new
   release) — verify against the explicit `releases/download/vX/Combray.pkg` asset URL instead.
 - Cask `url` uses `v#{version}/Combray.pkg`, so a release just needs `version` + `sha256` bumped.
 - Still **ad-hoc signed, not notarized** — README documents the first-launch right-click → Open.
+
+### Auto-updater (v0.12.0+) — `AppUpdate.swift` (core) + `Updater.swift` / `UpdateBubble.swift` (app)
+- **Source of truth = the GitHub release tag.** `Updater.check()` GETs
+  `api.github.com/repos/Labern/Combray/releases/latest`, reads `tag_name`, strips the `v`, and
+  compares numerically to `CFBundleShortVersionString` via `AppUpdate.isNewer` (component-wise Ints
+  so `0.10 > 0.9` — never lexical). README also shows a human `Version:` line but the machine reads
+  the tag (the download is bound to it; prose parsing is fragile). Unauthenticated API = 60 req/hr;
+  we use ~3/hr (launch + every 20 min via a `Timer`).
+- **Seamless install = bundle swap, not the `.pkg`.** A `.pkg` install needs an admin prompt; swapping
+  `/Applications/Combray.app` in place doesn't (Applications is user-writable for admins). So the
+  updater downloads `Combray.zip`, `ditto -x -k` unzips it to `~/Library/Application Support/Combray/
+  Updates/<ver>/`, then a **detached `swap.sh`** waits for the app's PID to exit → `rm -rf` the old
+  bundle → `ditto` the new one in → **`codesign --force --deep --sign -`** (mandatory on macOS 26) →
+  `xattr -dr com.apple.quarantine` (else Gatekeeper re-prompts) → `open` (relaunch) or not.
+- **Two paths, both wired:** clicking the bubble = `installNow()` (swap **with** relaunch, then
+  `NSApp.terminate`); doing nothing = `applyStagedUpdateOnQuit()` on `willTerminateNotification`
+  (swap **without** relaunch, so the next open is the new version). A `swapLaunched` guard prevents
+  double-swapping when both fire.
+- **No data risk by construction:** the updater only ever touches the `.app`. Letters live in a
+  separate folder and the index rebuilds from disk on launch — replacing the bundle can't lose data.
+- **Dev builds are exempt:** `installedAppURL` is nil unless `Bundle.main.bundlePath` ends in `.app`,
+  so `swift run` never nags or tries to self-swap. Preview the bubble with
+  `Combray --render-update <png>` (uses `Updater(previewState: .ready(...))`).
 
 ### Git state (important)
 - The local `~/Combray` repo was `git init`'d this session; its history was **independent** of the

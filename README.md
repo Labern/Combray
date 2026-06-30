@@ -2,6 +2,8 @@
 
 *One bite of the madeleine brings it all back.*
 
+**Version: 0.12.0**
+
 A personal **macOS** app that rescues **near-illegible handwritten letters** into a searchable,
 browsable archive. Photograph a letter with your iPhone, and **Claude** transcribes it — then stores
 it as a structured entry (sender, recipient, date, summary), side-by-side with the photo, organized
@@ -27,6 +29,13 @@ Launchpad, and the Applications window).
 brew tap Labern/combray
 brew install --cask combray
 ```
+
+### Automatic updates
+
+From **0.12.0** on, Combray updates itself. It checks GitHub on launch and every 20 minutes; when a
+newer release is published, a small **"Restart to update"** bubble appears bottom-left. Click it to
+relaunch into the new version, or just **quit and reopen** — the update applies on its own. It only
+ever replaces the app bundle, so **your letters are never touched**.
 
 ### Build from source
 

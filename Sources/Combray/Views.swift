@@ -15,6 +15,7 @@ enum SidebarMode: String, CaseIterable, Identifiable {
 
 struct RootView: View {
     @EnvironmentObject var c: ArchiveController
+    @EnvironmentObject var updater: Updater
     @State private var mode: SidebarMode = .letters
     @AppStorage("darkMode") private var darkMode = false
     @State private var showFeatureRequest = false
@@ -84,6 +85,12 @@ struct RootView: View {
         }
         .background(Theme.bg)
         .preferredColorScheme(darkMode ? .dark : .light)
+        .overlay(alignment: .bottomLeading) {
+            UpdateBubble(updater: updater)
+                .padding(.leading, 18)
+                .padding(.bottom, 70)
+        }
+        .task { updater.start() }
         .overlay {
             if let letter = c.fullSizeLetter {
                 FullTranscriptionView(letter: letter).environmentObject(c)

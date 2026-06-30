@@ -353,3 +353,33 @@ func renderMadeleinePNG(to path: String) {
           let png = rep.representation(using: .png, properties: [:]) else { return }
     try? png.write(to: URL(fileURLWithPath: path))
 }
+
+/// Like `renderMadeleinePNG`, but with the "Restart to update" bubble shown bottom-left — used to
+/// preview the auto-updater UI via `Combray --render-update <path>`.
+@MainActor
+func renderUpdatePreviewPNG(to path: String) {
+    let controller = ArchiveController()
+    let ui = ZStack(alignment: .bottomLeading) {
+        HStack(spacing: 0) {
+            SidebarView(mode: .constant(.letters)).frame(width: 340)
+            Divider()
+            VStack(spacing: 0) {
+                ExplainerView().frame(maxHeight: .infinity)
+                QuoteBar()
+            }
+        }
+        UpdateBubble(updater: Updater(previewState: .ready(version: "0.12.0")))
+            .padding(.leading, 18)
+            .padding(.bottom, 70)
+    }
+    .frame(width: 1040, height: 700)
+    .environmentObject(controller)
+
+    let renderer = ImageRenderer(content: ui)
+    renderer.scale = 2
+    guard let image = renderer.nsImage,
+          let tiff = image.tiffRepresentation,
+          let rep = NSBitmapImageRep(data: tiff),
+          let png = rep.representation(using: .png, properties: [:]) else { return }
+    try? png.write(to: URL(fileURLWithPath: path))
+}
