@@ -270,8 +270,7 @@ final class ArchiveController: ObservableObject {
         isTranscribing = true
         defer { busy = nil; isTranscribing = false }
         do {
-            let references = handwritingReferences(excluding: letterId)
-            let result = try await transcribeWithFallback(urls, references: references)
+            let result = try await transcribeWithFallback(urls)
             _ = try archive.applyTranscription(result, toLetterId: letterId)
             backup(letterId)
             reload()
@@ -284,34 +283,16 @@ final class ArchiveController: ObservableObject {
 
     /// Runs transcription with the chosen model. In "Automatic" mode, if Opus is rejected because the
     /// account isn't on a paid plan, it transparently retries with Sonnet.
-    private func transcribeWithFallback(_ urls: [URL],
-                                        references: [AnthropicClient.HandwritingSample]) async throws -> TranscriptionResult {
+    private func transcribeWithFallback(_ urls: [URL]) async throws -> TranscriptionResult {
         let primary = transcriptionModel.modelID
         do {
-            return try await client.transcribe(imageURLs: urls, references: references, model: primary)
+            return try await client.transcribe(imageURLs: urls, model: primary)
         } catch let AnthropicError.http(status, msg)
                     where transcriptionModel == .auto && primary == "claude-opus-4-8"
                     && Self.looksLikePlanLimit(status, msg) {
             busy = "Switching to Sonnet for your plan…"
-            return try await client.transcribe(imageURLs: urls, references: references, model: "claude-sonnet-4-6")
+            return try await client.transcribe(imageURLs: urls, model: "claude-sonnet-4-6")
         }
-    }
-
-    /// Up to a few labeled handwriting samples — one page per known sender — so the model can guess
-    /// the writer of a newly-transcribed document (meta.suspected_writer). Excludes this letter.
-    private func handwritingReferences(excluding letterId: String) -> [AnthropicClient.HandwritingSample] {
-        var samples: [AnthropicClient.HandwritingSample] = []
-        for person in people {
-            guard samples.count < 6 else { break }
-            let theirLetters = (try? archive.letters(forPersonId: person.id)) ?? []
-            for l in theirLetters where l.id != letterId {
-                guard (try? archive.participants(forLetterId: l.id))?.sender?.id == person.id,
-                      let firstPage = (try? archive.pages(forLetterId: l.id))?.first else { continue }
-                samples.append(.init(name: person.displayName, imageURL: images.url(for: firstPage)))
-                break
-            }
-        }
-        return samples
     }
 
     /// Heuristic: does this API error look like "your plan can't use this model"?

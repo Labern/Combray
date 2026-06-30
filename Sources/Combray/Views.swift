@@ -29,13 +29,9 @@ struct RootView: View {
             }
             .overlay(alignment: .bottom) { statusBar }
             .toolbar {
-                ToolbarItem(placement: .principal) {
+                ToolbarItem(placement: .navigation) {
                     Button { c.goHome() } label: {
-                        HStack(spacing: 8) {
-                            MadeleineIcon().frame(width: 22, height: 22)
-                            Text("Combray").font(Theme.serif(18, .bold)).foregroundStyle(Theme.ink)
-                        }
-                        .contentShape(Rectangle())
+                        Text("Combray").font(Theme.serif(18, .bold)).foregroundStyle(Theme.ink)
                     }
                     .buttonStyle(TapStyle(scale: 0.95))
                     .help("Home — back to the main page")

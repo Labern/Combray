@@ -130,36 +130,12 @@ public struct AnthropicClient: Sendable {
         self.model = model
     }
 
-    /// A labeled handwriting reference: one page image known to be written by `name`. Supplied so the
-    /// model can compare the new document's handwriting and guess a suspected writer (meta).
-    public struct HandwritingSample: Sendable {
-        public let name: String
-        public let imageURL: URL
-        public init(name: String, imageURL: URL) { self.name = name; self.imageURL = imageURL }
-    }
-
-    public func transcribe(imageURLs: [URL], references: [HandwritingSample] = [],
-                           model overrideModel: String? = nil) async throws -> TranscriptionResult {
+    public func transcribe(imageURLs: [URL], model overrideModel: String? = nil) async throws -> TranscriptionResult {
         let model = overrideModel ?? self.model
         let headers = try await Self.authHeaders()
 
-        var content: [[String: Any]] = []
-
-        // Optional labeled reference handwriting samples (downscaled — only the *style* matters),
-        // so the model can guess who wrote the new document.
-        if !references.isEmpty {
-            content.append(["type": "text", "text": Self.referencePreamble])
-            for ref in references {
-                guard let jpeg = try? Self.jpegData(from: ref.imageURL, maxDimension: 1100) else { continue }
-                content.append(["type": "text", "text": "Reference handwriting — known to be \(ref.name):"])
-                content.append(["type": "image",
-                                "source": ["type": "base64", "media_type": "image/jpeg",
-                                            "data": jpeg.base64EncodedString()]])
-            }
-            content.append(["type": "text", "text": "— End of reference samples. The document to transcribe follows. —"])
-        }
-
         // Build image content blocks (re-encode anything — incl. HEIC — to JPEG).
+        var content: [[String: Any]] = []
         for url in imageURLs {
             let jpeg = try Self.jpegData(from: url)
             content.append([
@@ -356,35 +332,6 @@ public struct AnthropicClient: Sendable {
         return jpeg
     }
 
-    /// JPEG, downscaled so the longest side is ≤ `maxDimension` — used for reference handwriting
-    /// samples, where only the writing *style* matters, to keep the request small.
-    static func jpegData(from url: URL, maxDimension: Int) throws -> Data {
-        guard let image = NSImage(contentsOf: url),
-              let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff)
-        else { throw AnthropicError.badImage(url.lastPathComponent) }
-        let w = rep.pixelsWide, h = rep.pixelsHigh
-        let longest = max(w, h)
-        if longest <= maxDimension || longest == 0 {
-            if let jpeg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) { return jpeg }
-            return try jpegData(from: url)
-        }
-        let scale = Double(maxDimension) / Double(longest)
-        let nw = Int((Double(w) * scale).rounded()), nh = Int((Double(h) * scale).rounded())
-        guard let scaled = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: nw, pixelsHigh: nh,
-                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else {
-            return try jpegData(from: url)
-        }
-        scaled.size = NSSize(width: nw, height: nh)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: scaled)
-        image.draw(in: NSRect(x: 0, y: 0, width: nw, height: nh))
-        NSGraphicsContext.restoreGraphicsState()
-        if let jpeg = scaled.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) { return jpeg }
-        return try jpegData(from: url)
-    }
-
     static let instruction = """
     These are photographs of the pages of a single handwritten letter, in order. The handwriting \
     may be difficult or nearly illegible — read it as carefully as you can, using context to decode \
@@ -425,22 +372,12 @@ public struct AnthropicClient: Sendable {
     Also study the HANDWRITING itself. In meta.handwriting_profile, give your best guess at the \
     writer's sex and approximate age based purely on handwriting style — letterforms, slant, \
     pressure, formality, fluency — e.g. "Likely female, 30s–40s", hedged honestly; use "" only if \
-    you truly cannot tell. If labeled reference handwriting samples of known writers were provided \
-    before this document, compare them carefully to this hand and, if one is a strong match, name \
-    that person in meta.suspected_writer with a brief reason and confidence (e.g. "Probably Eleanor \
-    — same slant and looped 'g'"); if none clearly match, or no references were given, set \
-    meta.suspected_writer to "".
+    you truly cannot tell. In meta.suspected_writer, if a signature, named sender, or the hand and \
+    content of THIS document let you identify or strongly suspect who wrote it, name them with a \
+    brief reason (e.g. "Signed 'M' — likely Marcel"); otherwise set it to "".
 
     Respond with ONLY a single JSON object containing these fields and nothing else — no markdown, \
     no commentary.
-    """
-
-    /// Prefaces the labeled reference handwriting samples sent before the document to transcribe.
-    static let referencePreamble = """
-    Before the document you must transcribe, here are some labeled REFERENCE handwriting samples — \
-    each is a page known to be written by the named person. Do NOT transcribe these; study their \
-    handwriting only, so that afterwards you can judge whether the document's writer matches one of \
-    them (for meta.suspected_writer).
     """
 
     static var schema: [String: Any] { [
