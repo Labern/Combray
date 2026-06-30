@@ -25,14 +25,14 @@ struct SidebarView: View {
                 }
             }
             .buttonStyle(TapStyle(scale: 0.96))
-            .help("Home. Go back to the welcome screen, where you can drag in photos or start a new letter. Nothing is lost — your archive is always one click away in the list below.")
+            .tip("Back to the welcome screen.")
             .padding([.horizontal, .top], Theme.gap)
 
             Button { c.showAddChoice = true } label: {
                 Label("Add a Letter", systemImage: "plus.circle.fill")
             }
             .buttonStyle(BigButtonStyle(fullWidth: true))
-            .help("Add a letter or document. Photograph its pages with your iPhone or pick image files from this Mac; Combray imports them and transcribes the handwriting into searchable text.")
+            .tip("Import a new letter — iPhone photos or Mac files — and transcribe it.")
             .padding(.horizontal, Theme.gap)
 
             list
@@ -41,7 +41,7 @@ struct SidebarView: View {
                 Label("Find a specific letter", systemImage: "sparkle.magnifyingglass")
             }
             .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
-            .help("Find a specific letter with AI. Describe what you're after in plain English — a kind, theme, time period, a writer, or a pair of people — and Claude searches your whole archive and links you straight to the matches.")
+            .tip("AI search: describe what you want, get links to matching letters.")
             .padding(.horizontal, Theme.gap)
 
             ModeSelector(mode: $mode)
@@ -65,7 +65,7 @@ struct SidebarView: View {
             }
             .buttonStyle(TapStyle(scale: 0.92))
             .foregroundStyle(Theme.faint)
-            .help("Settings. Connect or switch your Claude account, choose which model transcribes, tell Combray about yourself (for the suspected-writer guess), turn on iCloud backup, and open the web viewer.")
+            .tip("Account, model, about-you, backup and the web viewer.")
 
             Spacer()
 
@@ -148,7 +148,7 @@ struct ModeSelector: View {
                 .foregroundStyle(mode == m ? Color.white : Theme.ink)
                 .background(RoundedRectangle(cornerRadius: 9).fill(mode == m ? Theme.accent : Theme.surface))
                 .overlay(RoundedRectangle(cornerRadius: 9).stroke(mode == m ? Color.clear : Theme.line))
-                .help(helpText(m))
+                .tip(helpText(m))
             }
         }
         .padding(.horizontal, Theme.gap)
@@ -157,9 +157,9 @@ struct ModeSelector: View {
 
     private func helpText(_ m: SidebarMode) -> String {
         switch m {
-        case .letters: return "Letters. Show every letter and document in your archive, newest first, with pinned ones held at the top."
-        case .people:  return "People. Browse by who wrote or received the letters; pick a person to see everyone they corresponded with and all their letters in order."
-        case .years:   return "Years. Group the archive by year, so you can read your collection as a timeline."
+        case .letters: return "All letters, newest first."
+        case .people:  return "Browse by who wrote or received them."
+        case .years:   return "Group the archive by year."
         }
     }
 }

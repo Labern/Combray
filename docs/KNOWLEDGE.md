@@ -377,3 +377,47 @@ reinstall to /Applications, copy app into `dist/stage/Applications/`, `pkgbuild 
 
 Open: notarization (needs Apple Developer ID); transcript entity hyperlinks (deferred); iCloud auto/relocate
 decision; a real web viewer of the archive (data layer is already portable).
+
+---
+
+## How this collaboration works — and why the phrasing lands
+
+A note written at Labern's request, reflecting on why this stretch of work went well, so a future
+session can reproduce the conditions rather than just the code.
+
+What Labern's requests reliably contain — and why each one helps the executor:
+
+- **An observable end-state, not an implementation.** "Make the Find button *light so it contrasts
+  against the yellow buttons*", "centred and *right in the middle*", "*mono* for screenshots of a
+  CLI", "a *small pop-down* the user can type into". The ask names what the result should *look like
+  or do*, which is directly verifiable (build, run, look) and leaves the *how* open. Underspecified
+  surface ("light") is resolved by the stated **reason** ("contrast with the yellow") — so the right
+  mechanism (the outlined button style) is both obvious and checkable.
+- **The why or a concrete example, alongside the surface ask.** "★★★★★ × PARADOX to be known to be
+  written by me" isn't "add an owner field" — it's an *example that reveals the intent* (owner
+  recognition), which tells you what to build even though the field was never named. Examples
+  disambiguate faster than specs.
+- **One change at a time, against a running app.** Small, focused messages with an immediate
+  build-and-look loop. Each request lands on a known, live state; ambiguity is cheap because the next
+  message corrects course in seconds. Momentum compounds.
+- **Decisive, terse corrections.** "No, horizontal." "Bring it back." "I told you this." No
+  agonising — a quick redirect. Low cost of correction is what makes acting-without-asking the right
+  default; you can commit to a small decision and be cheaply overruled.
+- **Shared context treated as memory.** "Remember? Mono for screenshots etc." Terseness works
+  *because* the history is shared — they point instead of re-explaining, and trust the executor to
+  hold (or re-derive) the thread.
+- **Sequencing and separation.** "Fix the first two first." "This should be on main when we finish
+  the last thing." Order is imposed explicitly, so focus is never ambiguous.
+- **A stable aesthetic vocabulary.** "Beautiful", "slick", "doesn't draw attention to itself",
+  "power, simplicity, style". The same words map to the same target every time, so "beautiful font"
+  or "subtle grey" are concrete, not vague.
+
+Why it's *executable*: the asks are **verifiable end-states + the intent behind them**, delivered in
+a **tight single-change loop** over a **running system with a clean spine** (theme tokens, MVC,
+folders-as-source-of-truth). That spine keeps each change local; the loop gives fast feedback to
+self-correct; the stated intent resolves the inevitable underspecification correctly. The result is
+that a sentence like "make it light so it contrasts" — technically ambiguous in isolation — becomes
+an unambiguous, checkable target in context.
+
+The practical lesson for next time: **act on the intent, verify against the observable end-state,
+keep the loop tight, and treat a terse correction as cheap and expected — not as a failure.**

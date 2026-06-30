@@ -43,7 +43,7 @@ struct RootView: View {
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Theme.accentDeep)
                     }
-                    .help("HelpDesk. Stuck on how something works? Open a little box, type your question, and it goes straight to Labern on WhatsApp for a human answer.")
+                    .help("Ask Labern a question over WhatsApp.")
                     .popover(isPresented: $showHelpDesk, arrowEdge: .bottom) {
                         WhatsAppPopover(title: "Got a question about how it works?",
                                         blurb: "Ask anything about Combray — adding letters, transcribing, searching, and so on. This opens WhatsApp to send your question to Labern.",
@@ -60,7 +60,7 @@ struct RootView: View {
                             .foregroundStyle(Theme.accentDeep)
                     }
                     .labelStyle(.titleAndIcon)
-                    .help("Request a feature. Wish Combray did something it doesn't? Open a little box, describe your idea, and it's sent to Labern on WhatsApp.")
+                    .help("Suggest a feature — sent to Labern over WhatsApp.")
                     .popover(isPresented: $showFeatureRequest, arrowEdge: .bottom) {
                         WhatsAppPopover(title: "Request a feature",
                                         blurb: "What would you like Combray to do? This opens WhatsApp to send your idea to Labern.",
@@ -76,9 +76,7 @@ struct RootView: View {
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Theme.accentDeep)
                     }
-                    .help(darkMode
-                        ? "Switch to Light mode — the bright, paper-white theme, best for reading in daylight."
-                        : "Switch to Dark mode — a warm, dark theme that's easier on the eyes at night.")
+                    .tip(darkMode ? "Switch to Light mode." : "Switch to Dark mode.")
                 }
             }
 

@@ -103,6 +103,39 @@ extension View {
             .background(RoundedRectangle(cornerRadius: Theme.radius).fill(Theme.surface))
             .overlay(RoundedRectangle(cornerRadius: Theme.radius).stroke(Theme.line, lineWidth: 1))
     }
+
+    /// A hover tooltip with a larger, readable font — the native `.help()` font can't be enlarged.
+    /// Appears after a brief hover and dismisses when the pointer leaves.
+    func tip(_ text: String) -> some View { modifier(HoverTip(text: text)) }
+}
+
+struct HoverTip: ViewModifier {
+    let text: String
+    @State private var show = false
+    @State private var pending: DispatchWorkItem?
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { inside in
+                pending?.cancel()
+                if inside {
+                    let work = DispatchWorkItem { show = true }
+                    pending = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+                } else {
+                    show = false
+                }
+            }
+            .popover(isPresented: $show, arrowEdge: .bottom) {
+                Text(text)
+                    .font(.system(size: 17))
+                    .foregroundStyle(Theme.ink)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 320, alignment: .leading)
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+            }
+    }
 }
 
 // MARK: - Madeleine
