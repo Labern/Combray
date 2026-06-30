@@ -500,3 +500,9 @@ folders. Settings (`ownerName`, `ownerProfile`, etc.) live in UserDefaults, not 
 - This session edited inside a git **worktree** at `.claude/worktrees/dev` (branch `integration`,
   bg-isolation guard); changes are merged/cherry-picked to `main` in `~/Combray` for release.
   `.claude/` is gitignored. We are now in **shipping** mode (fast-iteration's release pause is over).
+
+### Versioning policy (updated 2026-06-30, supersedes the note above)
+**Semantic versioning from `0.11.1` onward** (user's call). I choose the bump: **`0.x.y` (patch)** for
+small fixes/tweaks, **`0.x.0` (minor)** for features. Tag = `vX.Y.Z`, in-app
+`CFBundleShortVersionString` = the same, shown in the footer. The legacy tags `v0.1…v0.10` were the
+old non-semver scheme (where `0.10 > 0.9`); don't reuse those numbers. Current latest: **v0.11.1**.
