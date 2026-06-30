@@ -81,6 +81,7 @@ struct LetterDetailView: View {
     @State private var isEditing = false
     @State private var showChat = false
     @State private var showAsk = false
+    @State private var showFullSize = false
     @State private var copied = false
     @State private var titleText = ""
     @State private var fromText = ""
@@ -249,7 +250,22 @@ struct LetterDetailView: View {
 
                 actions
 
-                Text("Transcription").font(Theme.label).foregroundStyle(Theme.faint)
+                HStack {
+                    Text("Transcription").font(Theme.label).foregroundStyle(Theme.faint)
+                    Spacer()
+                    if !letter.transcription.isEmpty {
+                        Button { showFullSize = true } label: {
+                            Label("View full size", systemImage: "arrow.up.left.and.arrow.down.right")
+                                .font(Theme.small)
+                        }
+                        .buttonStyle(TapStyle())
+                        .foregroundStyle(Theme.accentDeep)
+                        .help("Open the transcription in a big, beautiful reading window")
+                        .popover(isPresented: $showFullSize, arrowEdge: .top) {
+                            FullTranscriptionView(letter: letter, presented: $showFullSize).environmentObject(c)
+                        }
+                    }
+                }
                 if isEditing {
                     TextEditor(text: $draft)
                         .font(.system(size: 18))
@@ -309,27 +325,9 @@ struct LetterDetailView: View {
     /// "letter view" (paragraphs are paragraphs, no early wrapping, capped reading width); computer
     /// screenshots / code keep their exact whitespace as transcribed.
     @ViewBuilder private var transcriptionView: some View {
-        if TextReflow.isLayoutSignificant(letter.documentType) {
-            // Screenshots / code — mirror the form of the transcription verbatim. Monospaced so
-            // aligned columns and indentation line up exactly as captured.
-            Text(letter.transcription)
-                .font(.system(size: 16, design: .monospaced))
-                .lineSpacing(6)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            VStack(alignment: .leading, spacing: 16) {
-                ForEach(Array(TextReflow.paragraphs(letter.transcription).enumerated()), id: \.offset) { _, para in
-                    Text(para)
-                        .font(Theme.letterFace(21))
-                        .lineSpacing(9)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .frame(maxWidth: 680, alignment: .leading)   // a comfortable reading measure
-        }
+        let layoutSignificant = TextReflow.isLayoutSignificant(letter.documentType)
+        TranscriptionText(transcription: letter.transcription, documentType: letter.documentType)
+            .frame(maxWidth: layoutSignificant ? .infinity : 680, alignment: .leading)
     }
 
     private var actions: some View {
@@ -436,6 +434,77 @@ struct MetaPanel: View {
             Text(title).font(Theme.label).foregroundStyle(Theme.faint)
             Text(value ?? "—").font(Theme.body)
         }
+    }
+}
+
+// MARK: - Transcription rendering (shared by the pane and the full-size window)
+
+/// Renders a transcription for reading: letters/written documents reflowed in a beautiful serif;
+/// screenshots / code verbatim in monospace. Shared by the detail pane and the "View full size" view.
+struct TranscriptionText: View {
+    let transcription: String
+    let documentType: String?
+    var serifSize: CGFloat = 21
+    var monoSize: CGFloat = 16
+    var paragraphSpacing: CGFloat = 16
+
+    var body: some View {
+        if TextReflow.isLayoutSignificant(documentType) {
+            Text(transcription)
+                .font(.system(size: monoSize, design: .monospaced))
+                .lineSpacing(6)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: paragraphSpacing) {
+                ForEach(Array(TextReflow.paragraphs(transcription).enumerated()), id: \.offset) { _, para in
+                    Text(para)
+                        .font(Theme.letterFace(serifSize))
+                        .lineSpacing(serifSize * 0.43)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+}
+
+/// The "View full size" pop-over: the transcription, big and beautifully set, for clear reading.
+/// Dismisses on Close or on a click outside (native popover behaviour).
+struct FullTranscriptionView: View {
+    let letter: Letter
+    @Binding var presented: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button { presented = false } label: { Label("Close", systemImage: "xmark") }
+                    .buttonStyle(BigButtonStyle(filled: false, compact: true))
+            }
+            .padding(.horizontal, 20).padding(.vertical, 14)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let title = letter.title, !title.isEmpty {
+                        Text(title).font(Theme.letterFace(32))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if let date = DateDisplay.pretty(letter.dateValue) {
+                        Text(date).font(Theme.sans(15)).foregroundStyle(Theme.faint)
+                    }
+                    TranscriptionText(transcription: letter.transcription, documentType: letter.documentType,
+                                      serifSize: 24, monoSize: 17, paragraphSpacing: 20)
+                        .padding(.top, 6)
+                }
+                .padding(.horizontal, 60).padding(.vertical, 44)
+                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: .infinity)   // centre the reading column
+            }
+        }
+        .frame(width: 820, height: 860)
+        .background(Theme.bg)
     }
 }
 

@@ -106,6 +106,20 @@ public struct AskResult: Decodable, Sendable, Hashable {
     enum CodingKeys: String, CodingKey { case reply, suggestion }
 }
 
+/// One result from an intelligent "find a letter" search: the matched letter's id and why it matched.
+public struct LetterMatch: Decodable, Sendable, Hashable {
+    public var id = ""
+    public var reason = ""
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(String.self, forKey: .id)) ?? ""
+        reason = (try? c.decode(String.self, forKey: .reason)) ?? ""
+    }
+    enum CodingKeys: String, CodingKey { case id, reason }
+}
+
+private struct FindResult: Decodable { var matches: [LetterMatch] = [] }
+
 public enum AnthropicError: LocalizedError {
     case missingAPIKey
     case http(Int, String)
@@ -352,6 +366,70 @@ public struct AnthropicClient: Sendable {
     echo the given text back unchanged. You are working from text only and cannot see the handwriting, \
     so set meta.handwriting_profile to "". For meta.suspected_writer use any signature/content cues \
     and the archive owner profile if one was provided. Respond with ONLY the JSON object.
+    """
+
+    /// Intelligent archive search: given the user's request and a one-line-per-item catalog, returns
+    /// the matching letters (their ids + a short reason), most relevant first. Text only — cheap.
+    public func findLetters(query: String, catalog: String,
+                            model overrideModel: String? = nil) async throws -> [LetterMatch] {
+        let model = overrideModel ?? self.model
+        let headers = try await Self.authHeaders()
+
+        var systemBlocks: [[String: Any]] = []
+        if Keychain.credential()?.kind == .oauth {
+            systemBlocks.append(["type": "text",
+                                 "text": "You are Claude Code, Anthropic's official CLI for Claude."])
+        }
+        systemBlocks.append(["type": "text", "text": Self.findInstruction])
+
+        let userText = "Request:\n\(query)\n\nCATALOG (one item per line):\n\(catalog)"
+        let schema: [String: Any] = [
+            "type": "object", "additionalProperties": false, "required": ["matches"],
+            "properties": [
+                "matches": ["type": "array", "items": [
+                    "type": "object", "additionalProperties": false, "required": ["id", "reason"],
+                    "properties": ["id": ["type": "string"], "reason": ["type": "string"]]
+                ]]
+            ]
+        ]
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 4000,
+            "output_config": ["format": ["type": "json_schema", "schema": schema]],
+            "system": systemBlocks,
+            "messages": [["role": "user", "content": [["type": "text", "text": userText]]]]
+        ]
+
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        request.httpMethod = "POST"
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 120
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw AnthropicError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        guard
+            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let blocks = root["content"] as? [[String: Any]],
+            let text = blocks.first(where: { $0["type"] as? String == "text" })?["text"] as? String,
+            let jsonData = Self.extractJSON(text).data(using: .utf8)
+        else { throw AnthropicError.noContent }
+        return (try? JSONDecoder().decode(FindResult.self, from: jsonData))?.matches ?? []
+    }
+
+    static let findInstruction = """
+    You are a meticulous librarian for a personal archive of letters and documents. You are given the \
+    user's request and a CATALOG with one item per line in the form: \
+    [id] "title" — date — from X to Y — type — summary. Choose the items that best satisfy the \
+    request — whether by kind/type, theme or subject, time period, a particular writer or recipient, \
+    or a specific pair of correspondents — and order them most relevant first. Return each match as \
+    its exact id (copied verbatim from the catalog) plus a one-line reason it fits. Include only \
+    genuine matches; if none fit, return an empty list. Respond with ONLY the JSON object.
     """
 
     /// Resolves auth headers from the stored credential (refreshing an expired OAuth token).

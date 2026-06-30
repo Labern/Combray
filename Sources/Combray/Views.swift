@@ -38,11 +38,19 @@ struct RootView: View {
                             .transition(.opacity.combined(with: .scale))
                     }
                     Button { openHelpDesk() } label: {
-                        Image(systemName: "questionmark.circle")
+                        Image(systemName: "headset")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Theme.accentDeep)
                     }
-                    .help("Help — message Labern on WhatsApp")
+                    .help("HelpDesk — message Labern on WhatsApp")
+
+                    Button { openFeatureRequest() } label: {
+                        Label("Request feature", systemImage: "lightbulb")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Theme.accentDeep)
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .help("Request a feature — message Labern on WhatsApp")
 
                     Button { withAnimation(.easeInOut(duration: 0.25)) { darkMode.toggle() } } label: {
                         Image(systemName: darkMode ? "sun.max.fill" : "moon.fill")
@@ -61,6 +69,7 @@ struct RootView: View {
         .sheet(isPresented: $c.showAddChoice) { AddLetterSheet().environmentObject(c) }
         .sheet(isPresented: $c.showReplaceChoice) { ReplaceChoiceSheet().environmentObject(c) }
         .sheet(isPresented: $c.showAddPageChoice) { AddPageChoiceSheet().environmentObject(c) }
+        .sheet(isPresented: $c.showFindLetter) { FindLetterSheet().environmentObject(c) }
         .sheet(isPresented: $c.showCapture) { CaptureSheet().environmentObject(c) }
         .sheet(isPresented: $c.showSignIn) { SignInSheet().environmentObject(c) }
         .sheet(isPresented: $c.showSettings) { SettingsSheet().environmentObject(c) }
@@ -80,11 +89,13 @@ struct RootView: View {
         } message: { _ in Text("Are you sure? This removes this page image. The other pages stay.") }
     }
 
-    /// Opens the WhatsApp Mac app straight to a chat with Labern (the person this app is for).
-    /// UK 07476 897931 → international 447476897931 (no leading 0, no +). Falls back to wa.me.
-    private func openHelpDesk() {
+    private func openHelpDesk() { openWhatsApp("Combray question -- ") }
+    private func openFeatureRequest() { openWhatsApp("Combray feature request -- ") }
+
+    /// Opens the WhatsApp Mac app straight to a chat with Labern (the person this app is for),
+    /// pre-filled with `text`. UK 07476 897931 → international 447476897931. Falls back to wa.me.
+    private func openWhatsApp(_ text: String) {
         let phone = "447476897931"
-        let text = "Combray question -- "
         let q = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         if let app = URL(string: "whatsapp://send?phone=\(phone)&text=\(q)"),
            NSWorkspace.shared.open(app) { return }

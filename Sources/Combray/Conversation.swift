@@ -225,6 +225,103 @@ struct AskSheet: View {
     }
 }
 
+// MARK: - Find a specific letter (AI search)
+
+/// An intelligent search window: the user describes what they're after (kind, theme, period, writer,
+/// or a pair) and Claude returns the matching letters as clickable links.
+struct FindLetterSheet: View {
+    @EnvironmentObject var c: ArchiveController
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var searching = false
+    @State private var didSearch = false
+    @State private var results: [Match] = []
+    @FocusState private var focused: Bool
+
+    struct Match: Identifiable { let id: String; let title: String; let reason: String }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Find a specific letter").font(Theme.title)
+                    Text("Describe what you're after — a kind, theme, period, writer, or a pair of people.")
+                        .font(Theme.small).foregroundStyle(Theme.faint)
+                }
+                Spacer()
+                Button("Done") { dismiss() }.buttonStyle(BigButtonStyle(filled: false))
+            }.padding(Theme.pad)
+            Divider()
+
+            HStack(spacing: 12) {
+                TextField("e.g. \u{201C}angry letters from the 1960s\u{201D}, \u{201C}anything between Marcel and Eleanor\u{201D}…",
+                          text: $query, axis: .vertical)
+                    .textFieldStyle(.plain).font(Theme.body).lineLimit(1...4)
+                    .focused($focused).onSubmit(run)
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surface))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+                Button(action: run) { Label("Find", systemImage: "sparkle.magnifyingglass") }
+                    .buttonStyle(BigButtonStyle(compact: true)).disabled(!canSearch)
+            }.padding(Theme.pad)
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if searching {
+                        HStack(spacing: 10) {
+                            ProgressView().controlSize(.small)
+                            Text("Searching the archive…").font(Theme.small).foregroundStyle(Theme.faint)
+                        }
+                    } else if didSearch && results.isEmpty {
+                        Text("No matches. Try describing it a different way.")
+                            .font(Theme.body).foregroundStyle(Theme.faint)
+                    }
+                    ForEach(results) { m in
+                        Button { c.showLetter(m.id); dismiss() } label: {
+                            HStack(spacing: 12) {
+                                MadeleineIcon().frame(width: 28, height: 28)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(m.title).font(Theme.big)
+                                    Text(m.reason).font(Theme.small).foregroundStyle(Theme.faint).lineLimit(2)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(Theme.faint)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(TapStyle(scale: 0.985))
+                        .padding(16)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.surface))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line))
+                    }
+                }
+                .padding(Theme.pad).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(minWidth: 660, minHeight: 600)
+        .background(Theme.bg)
+        .onAppear { focused = true }
+    }
+
+    private var canSearch: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !searching
+    }
+
+    private func run() {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, !searching else { return }
+        searching = true; didSearch = true
+        Task {
+            let found = await c.findLetters(q)
+            await MainActor.run {
+                results = found.map { Match(id: $0.letter.id, title: $0.letter.title ?? "Untitled letter", reason: $0.reason) }
+                searching = false
+            }
+        }
+    }
+}
+
 // MARK: - Person detail (author view)
 
 struct PersonDetailView: View {

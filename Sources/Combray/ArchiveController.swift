@@ -57,6 +57,8 @@ final class ArchiveController: ObservableObject {
     // Search
     @Published var searchText: String = ""
     @Published var hits: [SearchHit] = []
+    /// Shows the AI "Find a specific letter" window.
+    @Published var showFindLetter = false
 
     // Status
     @Published var busy: String?
@@ -689,6 +691,34 @@ final class ArchiveController: ObservableObject {
     func runSearch() {
         guard !searchText.trimmingCharacters(in: .whitespaces).isEmpty else { hits = []; return }
         hits = (try? archive.search(searchText)) ?? []
+    }
+
+    /// Intelligent "find a letter" search over the whole archive (by kind, theme, period, writer, or
+    /// a pair). Returns the matched letters with a one-line reason each. Text only — no images.
+    func findLetters(_ query: String) async -> [(letter: Letter, reason: String)] {
+        guard Keychain.hasCredential(),
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !letters.isEmpty else { return [] }
+        let catalog = letters.map(letterCatalogLine).joined(separator: "\n")
+        do {
+            let matches = try await client.findLetters(query: query, catalog: catalog,
+                                                       model: transcriptionModel.modelID)
+            let byId = Dictionary(letters.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            return matches.compactMap { m in byId[m.id].map { (letter: $0, reason: m.reason) } }
+        } catch {
+            errorText = error.localizedDescription
+            return []
+        }
+    }
+
+    /// One catalog line for a letter: `[id] "title" — date — from X to Y — type — summary`.
+    private func letterCatalogLine(_ l: Letter) -> String {
+        let parts = participantsByLetter[l.id]
+        let from = parts?.from ?? "?"
+        let to = parts?.to ?? "?"
+        let date = l.dateValue ?? "undated"
+        let type = l.documentType ?? "document"
+        let summary = (l.summary ?? "").replacingOccurrences(of: "\n", with: " ")
+        return "[\(l.id)] \"\(l.title ?? "Untitled")\" — \(date) — from \(from) to \(to) — \(type) — \(summary)"
     }
 
     // MARK: - People & chat
