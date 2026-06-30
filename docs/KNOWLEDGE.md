@@ -680,7 +680,3 @@ project doesn't re-pay for them.
   **force-push** (safety tooling will gate that for an explicit human OK). Make the first real commit
   encode the prior released code, so the *code* stays continuous even when the *commit log* is
   replaced.
-- **A branch is NOT a new repo.** A long-lived feature (e.g. an iOS companion sharing the core) is a
-  feature **branch in the same repo**, not a second repo — the whole point is sharing the package.
-  Dodge the long-branch drift trap by landing shared/foundational bits on `main` as they're ready and
-  keeping only the genuinely new-surface code on the branch.
