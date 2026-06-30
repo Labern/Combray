@@ -86,6 +86,7 @@ struct LetterDetailView: View {
     @State private var toText = ""
     @State private var dateText = ""
     @State private var paneWidth: CGFloat = 0
+    @State private var droppingPage = false
     @FocusState private var focus: MetaField?
     enum MetaField { case title, from, to, date }
 
@@ -146,29 +147,78 @@ struct LetterDetailView: View {
     private var pages: some View {
         ScrollView {
             VStack(spacing: Theme.gap) {
-                ForEach(c.pages) { page in
+                ForEach(Array(c.pages.enumerated()), id: \.element.id) { idx, page in
                     if let image = loadImage(c.images.url(for: page)) {
-                        ZoomableImage(image: image)
-                            .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
-                            .contextMenu {
-                                Button { c.replacePageWithPicker(page) } label: {
-                                    Label("Replace image…", systemImage: "photo.on.rectangle")
+                        VStack(spacing: 8) {
+                            ZoomableImage(image: image)
+                                .frame(maxWidth: .infinity)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+                                .contextMenu {
+                                    Button { c.replacePageWithPicker(page) } label: {
+                                        Label("Replace image…", systemImage: "photo.on.rectangle")
+                                    }
+                                    Button(role: .destructive) { c.pendingDeletePage = page } label: {
+                                        Label("Delete image", systemImage: "trash")
+                                    }
                                 }
-                                Button(role: .destructive) { c.pendingDeletePage = page } label: {
-                                    Label("Delete image", systemImage: "trash")
-                                }
-                            }
+                            pageControls(page, number: idx + 1)
+                        }
                     }
                 }
                 if c.pages.isEmpty {
-                    Text("No page images.").font(Theme.body).foregroundStyle(Theme.faint).padding(50)
+                    Text("No page images yet — add the first below.")
+                        .font(Theme.body).foregroundStyle(Theme.faint).padding(.vertical, 30)
                 }
+                addPageButton
             }
             .padding(Theme.gap)
         }
         .background(Theme.surface)
+    }
+
+    /// Subtle per-page strip beneath each image: which page it is, plus visible Replace / Remove.
+    private func pageControls(_ page: Page, number: Int) -> some View {
+        HStack(spacing: 16) {
+            Text("Page \(number)").foregroundStyle(Theme.faint)
+            Spacer()
+            Button { c.replacePageWithPicker(page) } label: {
+                Label("Replace", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .buttonStyle(TapStyle())
+            .foregroundStyle(Theme.accentDeep)
+            .help("Swap in a better-quality photo of this page")
+            Button { c.pendingDeletePage = page } label: {
+                Label("Remove", systemImage: "trash")
+            }
+            .buttonStyle(TapStyle())
+            .foregroundStyle(.red)
+            .help("Remove this page from the letter")
+        }
+        .font(.system(size: 15, weight: .medium))
+        .padding(.horizontal, 4)
+    }
+
+    /// The dashed "＋ Add page" button under the last page — appends new photos to this letter.
+    /// Also accepts dropped image files for the same effect.
+    private var addPageButton: some View {
+        Button { c.addPagesWithPicker() } label: {
+            Label(c.pages.isEmpty ? "Add a page" : "Add page", systemImage: "plus")
+                .font(Theme.label)
+                .foregroundStyle(Theme.accentDeep)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 22)
+        }
+        .buttonStyle(TapStyle(scale: 0.98))
+        .background(RoundedRectangle(cornerRadius: 12)
+            .fill(droppingPage ? Theme.accent.opacity(0.08) : Color.clear))
+        .overlay(RoundedRectangle(cornerRadius: 12)
+            .stroke(droppingPage ? Theme.accent : Theme.line,
+                    style: StrokeStyle(lineWidth: 2, dash: [8])))
+        .onDrop(of: [.fileURL], isTargeted: $droppingPage) { providers in
+            loadDroppedURLs(providers) { urls in if !urls.isEmpty { c.addPages(from: urls) } }
+            return true
+        }
     }
 
     private var transcript: some View {

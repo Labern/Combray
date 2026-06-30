@@ -389,6 +389,47 @@ final class ArchiveController: ObservableObject {
         if selectedLetterID == page.letterId { loadDetail() }
     }
 
+    /// Appends new page images to the END of the selected letter (the "＋ Add page" button / drop).
+    /// Imported losslessly; indices stay contiguous; the folder backup is rewritten so the change is
+    /// durable and every prior app version still opens the exact same archive (no schema change).
+    func addPages(from urls: [URL]) {
+        guard let id = selectedLetterID,
+              let letter = letters.first(where: { $0.id == id }) else { return }
+        let n = letter.number
+        var pages = (try? archive.pages(forLetterId: id)) ?? []
+        for url in urls {
+            let slot = freePageIndex(letterNumber: n, startingAt: pages.count)
+            guard let page = try? images.importImage(from: url, letterId: id, letterNumber: n, index: slot)
+            else { continue }
+            pages.append(page)
+        }
+        for i in pages.indices { pages[i].pageIndex = i }   // keep display order contiguous
+        try? archive.setPages(pages, forLetterId: id)
+        backup(id)
+        if selectedLetterID == id { loadDetail() }
+    }
+
+    /// Opens a multi-select file picker and appends the chosen images as new pages of this letter.
+    func addPagesWithPicker() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.image]
+        panel.message = "Choose photo(s) to add as new pages of this letter, in order."
+        if panel.runModal() == .OK, !panel.urls.isEmpty { addPages(from: panel.urls) }
+    }
+
+    /// Lowest page index ≥ `start` whose `letter_<n>_page_<i+1>.*` filename is free on disk, so an
+    /// appended page can never clobber a file left behind by an earlier delete or replace.
+    private func freePageIndex(letterNumber n: Int, startingAt start: Int) -> Int {
+        let dir = images.lettersDir.appendingPathComponent("\(n)", isDirectory: true)
+        let taken = Set(((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+            .map { ($0 as NSString).deletingPathExtension })
+        var i = max(0, start)
+        while taken.contains("letter_\(n)_page_\(i + 1)") { i += 1 }
+        return i
+    }
+
     /// Opens a file picker and replaces one page's image with the chosen file (keeping its position).
     func replacePageWithPicker(_ page: Page) {
         guard let letter = letters.first(where: { $0.id == page.letterId }) else { return }
