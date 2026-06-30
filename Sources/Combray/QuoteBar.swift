@@ -38,6 +38,12 @@ struct QuoteBar: View {
     @State private var index = Int.random(in: 0..<AppTips.all.count)
     private let timer = Timer.publish(every: 18, on: .main, in: .common).autoconnect()
 
+    /// App version from the bundle Info.plist (three-part), shown in the footer. Falls back when the
+    /// app is run un-bundled (e.g. `swift run`).
+    static var appVersion: String {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.11.0"
+    }
+
     var body: some View {
         ZStack {
             Label(AppTips.all[index], systemImage: "lightbulb")
@@ -75,15 +81,20 @@ struct QuoteBar: View {
 
                 Spacer()
 
-                // bottom-right: credit
-                Button {
-                    if let u = URL(string: "https://github.com/Labern/Combray") { NSWorkspace.shared.open(u) }
-                } label: {
-                    Text("Made by Labern 🐿️").font(.system(size: 13, weight: .semibold))
+                // bottom-right: version + credit
+                HStack(spacing: 10) {
+                    Text("V\(Self.appVersion)")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.faint.opacity(0.65))
+                    Button {
+                        if let u = URL(string: "https://github.com/Labern/Combray") { NSWorkspace.shared.open(u) }
+                    } label: {
+                        Text("Made by Labern 🐿️").font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(TapStyle(scale: 0.9))
+                    .foregroundStyle(Theme.faint)
+                    .help("Made by Labern — open the source on GitHub")
                 }
-                .buttonStyle(TapStyle(scale: 0.9))
-                .foregroundStyle(Theme.faint)
-                .help("Made by Labern — open the source on GitHub")
             }
         }
         .padding(.vertical, 11).padding(.horizontal, 24)
