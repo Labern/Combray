@@ -3,13 +3,16 @@ import AppKit
 import Combine
 import CombrayCore
 
-/// Watches the GitHub repo for a newer release and, when one appears, downloads it in the background
-/// and swaps `/Applications/Combray.app` in place — like the Claude Desktop updater.
+/// Watches the GitHub repo for a newer release and installs it — like the Claude Desktop updater.
 ///
-/// Seamlessness & safety:
-/// - Source of truth is the latest GitHub **release tag** (see `AppUpdate` / `GitHubRelease`).
-/// - It downloads the `Combray.zip` asset (a signed app bundle) and swaps the bundle directly, so
-///   there's no admin-password prompt (a `.pkg` install would need one).
+/// Install strategy (robust across how Combray was installed):
+/// - It downloads BOTH the signed `Combray.zip` (app bundle) and `Combray.pkg`.
+/// - If `/Applications/Combray.app` is **user-owned** (drag-installed), it swaps the bundle in place
+///   with no prompt.
+/// - If it's **root-owned** (installed via the `.pkg` or Homebrew — the common case), an in-place
+///   swap can't touch root files, so it runs the `.pkg` through the privileged installer with a
+///   single admin-password prompt. (This is why the old in-place-only updater silently failed for
+///   pkg installs.)
 /// - It only ever touches the **app bundle** — never the user's letters — so no data can be lost.
 @MainActor
 final class Updater: ObservableObject {
@@ -26,7 +29,8 @@ final class Updater: ObservableObject {
     private let repo = "Labern/Combray"
     private var timer: Timer?
     private var stagedApp: URL?             // unzipped Combray.app waiting to be installed
-    private var swapLaunched = false        // the detached swap script has been kicked off
+    private var stagedPkg: URL?             // Combray.pkg, for the privileged (root-owned) install path
+    private var swapLaunched = false        // the detached install script has been kicked off
 
     init() {}
     /// Build an updater pinned to a fixed state — used only to render preview screenshots.
@@ -77,17 +81,27 @@ final class Updater: ObservableObject {
     }
 
     private func startDownload(_ release: GitHubRelease) {
-        // Only releases that carry a Combray.zip can self-update; older .pkg-only releases stay silent.
-        guard let assetURL = release.assetURL(suffix: ".zip") else { return }
+        // Need both assets: the .zip for the seamless swap, the .pkg for the privileged install.
+        guard let zipURL = release.assetURL(suffix: ".zip"),
+              let pkgURL = release.assetURL(suffix: ".pkg") else { return }
         let version = release.version
-        let dir = updatesDir
+        let dir = updatesDir.appendingPathComponent(version, isDirectory: true)
         releaseSummary = release.whatsNew
         state = .downloading(version: version)
         Task {
             do {
-                let (tmp, _) = try await URLSession.shared.download(from: assetURL)
-                let app = try await Task.detached { try Updater.stage(zip: tmp, version: version, updatesDir: dir) }.value
+                let fm = FileManager.default
+                try? fm.removeItem(at: dir)
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+                let zipDst = dir.appendingPathComponent("Combray.zip")
+                let pkgDst = dir.appendingPathComponent("Combray.pkg")
+                let (zipTmp, _) = try await URLSession.shared.download(from: zipURL)
+                try fm.moveItem(at: zipTmp, to: zipDst)           // move out of the temp dir before the next await
+                let (pkgTmp, _) = try await URLSession.shared.download(from: pkgURL)
+                try fm.moveItem(at: pkgTmp, to: pkgDst)
+                let app = try await Task.detached { try Updater.unzip(zipAt: zipDst, into: dir) }.value
                 stagedApp = app
+                stagedPkg = pkgDst
                 state = .ready(version: version)
             } catch {
                 state = .idle   // fail quietly; the 20-minute timer will try again
@@ -97,46 +111,52 @@ final class Updater: ObservableObject {
 
     // MARK: install
 
-    /// Apply the staged update now and relaunch (the bubble's action).
+    /// Apply the staged update now and relaunch (the bubble's action). Allowed to show the one
+    /// admin-password prompt needed for a root-owned (pkg/brew) install.
     func installNow() {
-        guard case .ready = state, let newApp = stagedApp, let dest = installedAppURL else { return }
-        launchSwap(newApp: newApp, dest: dest, relaunch: true)
+        guard case .ready = state, let app = stagedApp, let pkg = stagedPkg, let dest = installedAppURL else { return }
+        launchInstall(appSrc: app, pkg: pkg, dest: dest, relaunch: true, allowPrompt: true)
         NSApp.terminate(nil)
     }
 
     func hideBubble() { bubbleHidden = true }
 
     /// On normal quit, if an update is staged and the user didn't click, apply it silently (no relaunch)
-    /// so the next launch is the new version — the "auto-updates when closed and reopened" path.
+    /// so the next launch is the new version. Never prompts — a password dialog popping up on an
+    /// unattended quit would be hostile; a root-owned install just waits for the next explicit click.
     private func applyStagedUpdateOnQuit() {
-        guard case .ready = state, let newApp = stagedApp, let dest = installedAppURL else { return }
-        launchSwap(newApp: newApp, dest: dest, relaunch: false)
+        guard case .ready = state, let app = stagedApp, let pkg = stagedPkg, let dest = installedAppURL else { return }
+        launchInstall(appSrc: app, pkg: pkg, dest: dest, relaunch: false, allowPrompt: false)
     }
 
-    /// Write and launch a tiny detached script that waits for this app to exit, replaces the bundle,
-    /// re-signs it (required on macOS 26), strips quarantine, and optionally relaunches.
-    private func launchSwap(newApp: URL, dest: URL, relaunch: Bool) {
+    /// Write and launch a detached script that waits for this app to exit, then installs the update:
+    /// an in-place bundle swap when the app's files are writable, else (if allowed) the privileged
+    /// `.pkg` installer. Re-signs (macOS 26), strips quarantine, and optionally relaunches.
+    private func launchInstall(appSrc: URL, pkg: URL, dest: URL, relaunch: Bool, allowPrompt: Bool) {
         guard !swapLaunched else { return }
         swapLaunched = true
         let pid = ProcessInfo.processInfo.processIdentifier
         let script = """
         #!/bin/bash
-        PID="$1"; SRC="$2"; DEST="$3"; RELAUNCH="$4"
+        PID="$1"; APPSRC="$2"; PKG="$3"; DEST="$4"; RELAUNCH="$5"; ALLOWPROMPT="$6"
         for i in $(seq 1 150); do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
         sleep 0.3
-        /usr/bin/xattr -dr com.apple.quarantine "$SRC" 2>/dev/null
-        rm -rf "$DEST"
-        /usr/bin/ditto "$SRC" "$DEST"
-        /usr/bin/codesign --force --deep --sign - "$DEST" 2>/dev/null
+        /usr/bin/xattr -dr com.apple.quarantine "$APPSRC" 2>/dev/null
+        if [ -w "$DEST" ] && [ -w "$DEST/Contents" ]; then
+          rm -rf "$DEST" && /usr/bin/ditto "$APPSRC" "$DEST"
+          /usr/bin/codesign --force --deep --sign - "$DEST" 2>/dev/null
+        elif [ "$ALLOWPROMPT" = "1" ]; then
+          /usr/bin/osascript -e "do shell script \\"/usr/sbin/installer -pkg '$PKG' -target /\\" with administrator privileges" 2>/dev/null
+        fi
         /usr/bin/xattr -dr com.apple.quarantine "$DEST" 2>/dev/null
         if [ "$RELAUNCH" = "1" ]; then /usr/bin/open "$DEST"; fi
         """
         try? FileManager.default.createDirectory(at: updatesDir, withIntermediateDirectories: true)
-        let scriptURL = updatesDir.appendingPathComponent("swap.sh")
+        let scriptURL = updatesDir.appendingPathComponent("install.sh")
         try? script.write(to: scriptURL, atomically: true, encoding: .utf8)
         func q(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
-        let cmd = "nohup /bin/bash \(q(scriptURL.path)) \(pid) \(q(newApp.path)) \(q(dest.path)) "
-                + "\(relaunch ? "1" : "0") >/tmp/combray-update.log 2>&1 &"
+        let cmd = "nohup /bin/bash \(q(scriptURL.path)) \(pid) \(q(appSrc.path)) \(q(pkg.path)) \(q(dest.path)) "
+                + "\(relaunch ? "1" : "0") \(allowPrompt ? "1" : "0") >/tmp/combray-update.log 2>&1 &"
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", cmd]
@@ -150,19 +170,13 @@ final class Updater: ObservableObject {
             .appendingPathComponent("Combray/Updates", isDirectory: true)
     }
 
-    /// Unzip the downloaded asset into a clean per-version folder and return the `Combray.app` inside.
-    nonisolated private static func stage(zip: URL, version: String, updatesDir: URL) throws -> URL {
-        let fm = FileManager.default
-        let dir = updatesDir.appendingPathComponent(version, isDirectory: true)
-        try? fm.removeItem(at: dir)
-        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        let archive = dir.appendingPathComponent("Combray.zip")
-        try fm.moveItem(at: zip, to: archive)
-        guard run("/usr/bin/ditto", ["-x", "-k", archive.path, dir.path]) == 0 else {
+    /// Unzip the downloaded archive in place and return the `Combray.app` inside.
+    nonisolated private static func unzip(zipAt zip: URL, into dir: URL) throws -> URL {
+        guard run("/usr/bin/ditto", ["-x", "-k", zip.path, dir.path]) == 0 else {
             throw NSError(domain: "Combray.Updater", code: 1, userInfo: [NSLocalizedDescriptionKey: "unzip failed"])
         }
         let app = dir.appendingPathComponent("Combray.app")
-        guard fm.fileExists(atPath: app.path) else {
+        guard FileManager.default.fileExists(atPath: app.path) else {
             throw NSError(domain: "Combray.Updater", code: 2, userInfo: [NSLocalizedDescriptionKey: "no app in archive"])
         }
         return app

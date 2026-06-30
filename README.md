@@ -2,7 +2,7 @@
 
 *One bite of the madeleine brings it all back.*
 
-**Version: 0.12.1**
+**Version: 0.12.2**
 
 A personal **macOS** app that rescues **near-illegible handwritten letters** into a searchable,
 browsable archive. Photograph a letter with your iPhone, and **Claude** transcribes it — then stores

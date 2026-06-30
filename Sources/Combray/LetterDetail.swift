@@ -387,13 +387,14 @@ struct LetterDetailView: View {
                     .tip("Open a Gmail draft with this letter.")
             }
 
-            // Correspondence chat — conditional, kept below the main actions.
+            // "See modern chat view" — the correspondence-as-chat view (beta; being built out).
+            // Kept beneath the transcription's actions for now.
             if c.correspondence(forLetter: letter.id).count > 1 {
                 Button { showChat = true } label: {
-                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                    Label("See modern chat view (beta)", systemImage: "bubble.left.and.bubble.right")
                 }
                 .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
-                .tip("See the whole correspondence between these two people.")
+                .tip("Preview the whole correspondence between these two people as a chat (work in progress).")
             }
 
             if copied {

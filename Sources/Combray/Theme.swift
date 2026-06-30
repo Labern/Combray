@@ -87,7 +87,7 @@ struct BigButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.85 : 1)
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .contentShape(RoundedRectangle(cornerRadius: Theme.radius))
-            .animation(.spring(response: 0.28, dampingFraction: 0.62), value: configuration.isPressed)
+            .animation(.easeOut(duration: configuration.isPressed ? 0 : 0.18), value: configuration.isPressed)
     }
 }
 
@@ -99,7 +99,7 @@ struct TapStyle: ButtonStyle {
         configuration.label
             .opacity(configuration.isPressed ? 0.62 : 1)
             .scaleEffect(configuration.isPressed ? scale : 1)
-            .animation(.spring(response: 0.26, dampingFraction: 0.55), value: configuration.isPressed)
+            .animation(.easeOut(duration: configuration.isPressed ? 0 : 0.16), value: configuration.isPressed)
     }
 }
 
