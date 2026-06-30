@@ -506,3 +506,69 @@ folders. Settings (`ownerName`, `ownerProfile`, etc.) live in UserDefaults, not 
 small fixes/tweaks, **`0.x.0` (minor)** for features. Tag = `vX.Y.Z`, in-app
 `CFBundleShortVersionString` = the same, shown in the footer. The legacy tags `v0.1…v0.10` were the
 old non-semver scheme (where `0.10 > 0.9`); don't reuse those numbers. Current latest: **v0.11.1**.
+
+---
+
+## Reusable lessons for future projects
+Distilled from building Combray — transferable patterns, and gotchas that cost real time so the next
+project doesn't re-pay for them.
+
+### Data model for longevity
+- **Folders/files = source of truth; the database = a rebuildable cache.** Schema changes become
+  safe (rebuild the index from disk), and you can honestly promise "no data lost between versions."
+- **Evolve persisted formats only with optional/additive fields.** Old readers ignore unknown JSON
+  keys; new readers default missing ones. Never rename, remove, or restructure existing keys.
+
+### SwiftUI / macOS gotchas (each cost time; now known)
+- Native `.help()` tooltip font **can't be enlarged** → roll a custom hover tip: `.onHover` + a
+  delayed `.popover` with your own font.
+- SwiftUI `Text` has **no justified alignment** (only leading/center/trailing). True justify needs an
+  `NSViewRepresentable` (NSTextField/NSTextView).
+- **Centered modal that dismisses on outside click** = a window-level `.overlay` with a dimmed scrim
+  + `onTapGesture` to dismiss. A `.popover` anchors to its source (not centred); a `.sheet` won't
+  dismiss on an outside click.
+- **Deterministic screenshots, no Screen-Recording permission:** a `--render <path>` CLI mode using
+  SwiftUI `ImageRenderer` → PNG (real window capture needs Quartz + Screen-Recording grant; flaky).
+- **macOS 26:** after swapping the binary inside a `.app`, you MUST
+  `codesign --force --deep --sign - App.app` or launchd refuses to start it.
+- **Ad-hoc signing changes the code hash every build → TCC re-prompts.** Store user data in
+  `~/Library/Application Support/<App>` (ungated), NOT `~/Documents` (TCC-gated), to avoid a
+  permission nag on every rebuild/reinstall.
+- Beautiful system serif: `Font.custom("Hoefler Text", size:)` (verify with `NSFont(name:)`); Menlo
+  for monospace.
+
+### Distributing a Mac app with NO Apple Developer account
+- Ad-hoc sign; build a `.pkg`:
+  `pkgbuild --root <stage-dir-with-Applications/App.app> --install-location / --identifier <bundleid>
+  --version X out.pkg`; attach to a GitHub release; serve via `releases/latest/download/App.pkg`.
+  Optional Homebrew cask (a `homebrew-<x>` tap repo; bump `version` + `sha256`; cask `url` can use
+  `v#{version}/App.pkg`).
+- Not notarized → document the **first-launch right-click → Open** (or
+  `xattr -dr com.apple.quarantine /Applications/App.app`).
+- `releases/latest/download/…` is **CDN-cached** — verify a new release via the explicit
+  `releases/download/vX/…` asset URL.
+
+### Claude API integration
+- "Sign in with Claude" (OAuth) = the user's **Pro/Max subscription** — **free plans are rejected at
+  sign-in**, not later. An **API key** is a separate pay-as-you-go account. There is **no free path**
+  (inference is metered).
+- OAuth requires a first system block `"You are Claude Code, …"` or the API 429s.
+- Structured output: `output_config: { format: { type: "json_schema", schema } }`.
+- **Send text, not images, for cheap follow-ups** (e.g. re-deriving metadata from an edited
+  transcription). Avoid bundling reference images — the token cost is real.
+- **Anchor relative dates** by passing today's date in the prompt; models otherwise date undated /
+  digital content (screenshots) to their training era.
+
+### Working cadence & architecture
+- Tight loop: **edit → build → reinstall → relaunch → look.** Verify by observing the running app,
+  not just compiling. (See "How this collaboration works" above.)
+- **Theme tokens**: a `Theme` enum of semantic colours resolved at the root → dark mode and restyles
+  are a one-line swap, never per-view edits.
+- **Fat-but-simple controller** (one `@MainActor ObservableObject` owning services + published state)
+  keeps an MVC app legible without ceremony.
+
+### Git / release
+- A fresh `git init` repo is **history-unrelated** to a pre-existing GitHub repo → publishing needs a
+  **force-push** (safety tooling will gate that for an explicit human OK). Make the first real commit
+  encode the prior released code, so the *code* stays continuous even when the *commit log* is
+  replaced.
