@@ -421,3 +421,82 @@ an unambiguous, checkable target in context.
 
 The practical lesson for next time: **act on the intent, verify against the observable end-state,
 keep the loop tight, and treat a terse correction as cheap and expected — not as a failure.**
+
+---
+
+## v0.11 — shipped 2026-06-30 (this session)
+
+A large feature release, built and published live (GitHub release `v0.11` + Homebrew cask), fully
+backward-compatible (the directory storage format is unchanged — see "storage is immutable").
+
+### Features added this session
+- **Page management on existing letters** — add / remove / replace pages. "Add page" and "Replace"
+  open a chooser (iPhone · Mac file · drag). iPhone capture routes to the *current* letter
+  (`addPagesTarget`) or replaces a target page (`replaceTarget`) instead of making a new letter.
+  Collision-safe filename slotting (`freePageIndex`) so an append never clobbers a file left by a
+  delete/replace.
+- **Ask about the transcription** (`AskSheet`, `AnthropicClient.ask`) — chat about a transcription;
+  Claude returns a reply + an optional full proposed revision you Apply or keep.
+- **Neat letter view** (`CombrayCore/TextReflow`) — letters/documents reflowed into Hoefler Text
+  (beautiful book serif, capped reading width); screenshots/code shown verbatim in monospace.
+  Gated by `documentType` (persisted, additive) with a **legacy fallback** to the title + code/CLI
+  content shape so old screenshots (no `documentType`) still render monospaced. `TranscriptionText`
+  is shared by the pane and the **View full size** centred overlay (`fullSizeLetter`, dismiss on
+  outside click).
+- **Find a specific letter** (`FindLetterSheet`, `AnthropicClient.findLetters`) — AI search over a
+  one-line-per-letter catalog; returns clickable links. Replaced the old text-search sidebar mode.
+- **Handwriting meta** — `meta.handwriting_profile` (sex/age guess) + `meta.suspected_writer`, done
+  *inside the single transcription pass* (NO reference images — removed to save tokens). Owner
+  recognition via a TEXT **"About you"** profile (Settings: `ownerName`/`ownerProfile`) sent as
+  context so the owner's own notes (e.g. ★★★★★ / PARADOX) are attributed.
+- **Metadata refresh on edit** — editing/Applying a transcription re-derives summary, meta, quotes
+  via text-only `AnthropicClient.analyzeText` → `Archive.applyMetadata` (keeps transcription, title,
+  date, participants, doc-type, handwriting).
+- **Live capture status** — `CaptureServer.onConnect` drives "Waiting for images on iPhone…" → on
+  upload "Images sent!" → auto-close after 3s (all capture paths).
+- **Footer** — rotating `AppTips` (replaced Proust quotes; random start, cycles) + **version label**
+  `V x.x.x` (reads `CFBundleShortVersionString`, left of "Made by Labern").
+- **HelpDesk + Request feature** — toolbar headset / lightbulb open a small `WhatsAppPopover`
+  (type → opens WhatsApp to Labern with the right prefix).
+- **Custom hover tooltips** (`.tip` / `HoverTip`) — a popover with a larger 17pt font, since the
+  native `.help()` font can't be enlarged. Succinct one-liners on the main buttons. (HelpDesk /
+  Request-feature keep native `.help` to avoid two popovers on one button.)
+- `.docx` export matches the on-screen fonts (Hoefler Text / Menlo).
+- **People dedup** strengthened (`Archive.mergeDuplicatePeople(ownerName:)`) — deletes junk names
+  (e.g. ","), folds owner aliases (self/me + your name) into one, merges parenthesis-qualified
+  variants sharing a leading name ("Claude (CLI agent)" + "Claude Code (CLI agents)").
+- **Date anchor** — today's date is sent with each transcription so screenshots/digital content are
+  dated to *now*, not a training-era year.
+- Removed the duplicate toolbar "Combray" wordmark (the sidebar wordmark is the single home control).
+
+### Additive storage fields this session (all optional, backward-compatible)
+`documentType` (DB migration `v2`), `metaHandwriting` + `metaSuspectedWriter` (DB migration `v3`),
+all mirrored in `LetterFile`/`letter.json`. Old records default to nil; the DB is rebuilt from the
+folders. Settings (`ownerName`, `ownerProfile`, etc.) live in UserDefaults, not the archive.
+
+### Release / distribution — recipe & gotchas
+- **Versioning is NOT semver.** Releases are `v0.1, v0.2 … v0.9, v0.10, v0.11` (so `0.10 > 0.9`).
+  The repo already had `v0.1…v0.10` (from 2026-06-27); "Latest" = the highest. **Next is `v0.12`.**
+  The in-app version string is now three-part (`CFBundleShortVersionString = 0.11.0`), shown in the
+  footer.
+- **Recipe:** `swift build -c release` → copy `.build/release/Combray` into `.build/Combray.app/
+  Contents/MacOS/Combray` → `PlistBuddy Set :CFBundleShortVersionString/:CFBundleVersion X` →
+  `codesign --force --deep --sign - .build/Combray.app` → stage to `dist/stage/Applications/
+  Combray.app` → `pkgbuild --root dist/stage --install-location / --identifier com.labern.combray
+  --version X dist/Combray.pkg` → `shasum -a 256` → `gh release create vX dist/Combray.pkg`
+  (or `gh release upload vX dist/Combray.pkg --clobber`) → update tap `Labern/homebrew-combray`
+  `Casks/combray.rb` (`version` + `sha256`) via `gh api -X PUT … contents/Casks/combray.rb`.
+- **GOTCHA:** `releases/latest/download/Combray.pkg` is **CDN-cached** (lags minutes after a new
+  release) — verify against the explicit `releases/download/vX/Combray.pkg` asset URL instead.
+- Cask `url` uses `v#{version}/Combray.pkg`, so a release just needs `version` + `sha256` bumped.
+- Still **ad-hoc signed, not notarized** — README documents the first-launch right-click → Open.
+
+### Git state (important)
+- The local `~/Combray` repo was `git init`'d this session; its history was **independent** of the
+  GitHub repo's v0.1 history. It was **force-pushed once** to replace that history — the base commit
+  `a4ad922` IS the v0.1 code ("verified identical"), so the *code* is continuous, only the old
+  commit log was replaced. Subsequent pushes are fast-forward. `main` HEAD on GitHub = the latest
+  session commit.
+- This session edited inside a git **worktree** at `.claude/worktrees/dev` (branch `integration`,
+  bg-isolation guard); changes are merged/cherry-picked to `main` in `~/Combray` for release.
+  `.claude/` is gitignored. We are now in **shipping** mode (fast-iteration's release pause is over).
