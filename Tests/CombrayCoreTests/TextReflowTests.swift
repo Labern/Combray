@@ -25,12 +25,33 @@ final class TextReflowTests: XCTestCase {
         XCTAssertEqual(blocks.count, 2)
     }
 
-    /// Short lines (an address block) keep their own line breaks rather than being merged.
-    func testShortLinesKeepTheirBreaks() {
-        // An address block: every line is short, so none are joined.
+    /// Every line inside a block is joined — even short ones — so prose never keeps "poetic" breaks.
+    func testEveryLineInABlockIsJoined() {
+        // Short lines are joined too (no clever address/verse preservation): one flowing block.
         let input = "12 Rue de la Paix\nParis\nFrance"
+        XCTAssertEqual(TextReflow.paragraphs(input), ["12 Rue de la Paix Paris France"])
+    }
+
+    /// REGRESSION: a real letter whose every physical line was kept as a break must flow into ONE
+    /// paragraph with no internal newlines — the "strange poetic formatting" bug.
+    func testHardWrappedLetterFlowsIntoOneParagraph() {
+        let input = """
+        4 Monday. well I had a house full yesterday as the
+        baby Lawrence was not his bright self, very quiet & cross
+        says. Wendy was not up to
+        the mark with throat getting worse
+        Gavin home
+        """
         let blocks = TextReflow.paragraphs(input)
-        XCTAssertEqual(blocks, ["12 Rue de la Paix\nParis\nFrance"])
+        XCTAssertEqual(blocks.count, 1)                          // no blank lines → one block
+        XCTAssertFalse(blocks[0].contains("\n"))                 // NO mid-paragraph breaks
+        XCTAssertTrue(blocks[0].contains("not up to the mark"))  // short lines joined through
+    }
+
+    /// Paragraphs come from blank lines, even when the lines within are short.
+    func testParagraphsComeFromBlankLinesNotLineLength() {
+        let input = "Dear Anne\nhow are you?\n\nYours\nMarcel"
+        XCTAssertEqual(TextReflow.paragraphs(input), ["Dear Anne how are you?", "Yours Marcel"])
     }
 
     /// Several consecutive blank lines collapse to a single paragraph break.
@@ -46,10 +67,10 @@ final class TextReflowTests: XCTestCase {
         XCTAssertEqual(TextReflow.paragraphs("   \n  \n"), [])
     }
 
-    /// Trailing whitespace on each line is trimmed.
+    /// Trailing whitespace on each line is trimmed, and the lines join into one paragraph.
     func testTrailingWhitespacePerLineIsTrimmed() {
         let input = "Short one   \nShort two   "
-        XCTAssertEqual(TextReflow.paragraphs(input), ["Short one\nShort two"])
+        XCTAssertEqual(TextReflow.paragraphs(input), ["Short one Short two"])
     }
 
     // MARK: isLayoutSignificant(_:)

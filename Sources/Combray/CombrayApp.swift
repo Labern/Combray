@@ -15,6 +15,10 @@ struct CombrayApp: App {
             renderUpdatePreviewPNG(to: args[i + 1])
             exit(0)
         }
+        if let i = args.firstIndex(of: "--render-letter"), i + 1 < args.count {
+            renderLetterPreviewPNG(to: args[i + 1])
+            exit(0)
+        }
         if args.contains("--serve") {
             runCaptureServerHeadless()
         }

@@ -1,18 +1,25 @@
 import SwiftUI
 import AppKit
+import CombrayCore
 
 /// Design tokens. White, simple, BIG, legible. One warm madeleine-gold accent.
 /// Swap this file to re-theme everything.
 enum Theme {
     /// A token that resolves per appearance — `light` RGB in Light mode, `dark` RGB in Dark mode.
     /// Every colour flows through here, so Dark Mode is a single swap (no per-view edits).
-    static func dyn(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
-        Color(nsColor: NSColor(name: nil, dynamicProvider: { appearance in
+    static func dynNS(light: (Double, Double, Double), dark: (Double, Double, Double)) -> NSColor {
+        NSColor(name: nil, dynamicProvider: { appearance in
             let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             let c = isDark ? dark : light
             return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
-        }))
+        })
     }
+    static func dyn(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+        Color(nsColor: dynNS(light: light, dark: dark))
+    }
+
+    /// The ink colour as a (dark-mode-aware) `NSColor`, for AppKit views like the justified text view.
+    static let inkNS = dynNS(light: (0.12, 0.11, 0.10), dark: (0.928, 0.908, 0.860))
 
     static let bg        = dyn(light: (1.00, 1.00, 1.00),    dark: (0.086, 0.080, 0.067))  // paper / near-black
     static let surface   = dyn(light: (0.975, 0.965, 0.945), dark: (0.145, 0.132, 0.110))  // faint warm panel
@@ -381,6 +388,60 @@ func renderUpdatePreviewPNG(to path: String) {
     renderer.scale = 2
     guard let image = renderer.nsImage,
           let tiff = image.tiffRepresentation,
+          let rep = NSBitmapImageRep(data: tiff),
+          let png = rep.representation(using: .png, properties: [:]) else { return }
+    try? png.write(to: URL(fileURLWithPath: path))
+}
+
+/// Renders the reflowed letter view (the real `TranscriptionText`) for a representative letter — used
+/// to eyeball transcription formatting via `Combray --render-letter <path>`.
+@MainActor
+func renderLetterPreviewPNG(to path: String) {
+    // Multiple paragraphs (blank-line separated), each with the page's physical line breaks → should
+    // flow into justified paragraphs with clear spacing between sections.
+    let sample = """
+    calm and peaceful and quiet, and there is a bright moon
+    so we can see where we are. I trust that by the morning
+    we will have received some news. We are in constant touch
+    with Raido and also Singapore which is the Area station Ships.
+
+    I havent the faintest idea now what will happen to us, or so
+    the book says. It will take us a week or ten days in Dock if
+    the Dock is in Hong Kong, and we certainly cant undertake a
+    voyage of some thousands of miles across the Pacific in our
+    present state so it is this Charter will also have to be cancelled.
+
+    I am hoping for the best. You will I am sure be glad to know
+    that we have been in touch with our old Second Engineer Yoo
+    Yung Moon. He came to Singapore and told me that he had not
+    been paid in spite of Two telegrams to the Agents at Manilla.
+    """
+    // Render the *same* justified attributed text the app's JustifiedText draws (ImageRenderer can't
+    // snapshot an NSView, so draw it directly with AppKit).
+    let serif: CGFloat = 21
+    let width: CGFloat = 680, pad: CGFloat = 40
+    let font = NSFont(name: "Hoefler Text", size: serif) ?? .systemFont(ofSize: serif)
+    let style = NSMutableParagraphStyle()
+    style.alignment = .justified
+    style.lineSpacing = serif * 0.43
+    style.paragraphSpacing = 24
+    let body = TextReflow.paragraphs(sample).joined(separator: "\n\n")
+    let attr = NSAttributedString(string: body, attributes: [
+        .font: font, .foregroundColor: NSColor.black, .paragraphStyle: style])
+
+    let opts: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+    let textH = ceil(attr.boundingRect(with: NSSize(width: width, height: .greatestFiniteMagnitude),
+                                       options: opts).height)
+    let canvasW = width + pad * 2, canvasH = textH + pad * 2 + 36
+    let img = NSImage(size: NSSize(width: canvasW, height: canvasH))
+    img.lockFocus()
+    NSColor.white.setFill(); NSRect(x: 0, y: 0, width: canvasW, height: canvasH).fill()
+    ("Transcription" as NSString).draw(at: NSPoint(x: pad, y: canvasH - 30),
+        withAttributes: [.font: NSFont.boldSystemFont(ofSize: 16), .foregroundColor: NSColor.gray])
+    attr.draw(with: NSRect(x: pad, y: pad, width: width, height: textH), options: opts)
+    img.unlockFocus()
+
+    guard let tiff = img.tiffRepresentation,
           let rep = NSBitmapImageRep(data: tiff),
           let png = rep.representation(using: .png, properties: [:]) else { return }
     try? png.write(to: URL(fileURLWithPath: path))

@@ -44,4 +44,23 @@ final class DateDisplayTests: XCTestCase {
     func testNonIsoReturnedUnchanged() {
         XCTAssertEqual(DateDisplay.pretty("spring 1963"), "spring 1963")
     }
+
+    // MARK: numericUK (DD/MM/YYYY for the reading view)
+
+    /// A full date renders UK-numeric as DD/MM/YYYY with zero-padding.
+    func testNumericUKFullDate() {
+        XCTAssertEqual(DateDisplay.numericUK("1963-11-01"), "01/11/1963")
+        XCTAssertEqual(DateDisplay.numericUK("2000-12-31"), "31/12/2000")
+    }
+    /// Year+month renders as MM/YYYY; year-only as the year.
+    func testNumericUKPartialDates() {
+        XCTAssertEqual(DateDisplay.numericUK("1963-11"), "11/1963")
+        XCTAssertEqual(DateDisplay.numericUK("1963"), "1963")
+    }
+    /// nil/empty → nil; non-ISO passed through unchanged.
+    func testNumericUKNilAndNonIso() {
+        XCTAssertNil(DateDisplay.numericUK(nil))
+        XCTAssertNil(DateDisplay.numericUK("  "))
+        XCTAssertEqual(DateDisplay.numericUK("spring 1963"), "spring 1963")
+    }
 }

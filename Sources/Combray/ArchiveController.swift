@@ -909,7 +909,19 @@ final class ArchiveController: ObservableObject {
         let recipients = parties?.recipients.map(\.displayName) ?? []
         if !recipients.isEmpty { header.append("To: \(recipients.joined(separator: ", "))") }
         if let date = letter.dateValue { header.append("Date: \(date)") }
-        let body = (header.isEmpty ? "" : header.joined(separator: "\n") + "\n\n") + letter.transcription
+        let headerText = header.isEmpty ? "" : header.joined(separator: "\n") + "\n\n"
+        let full = headerText + letter.transcription
+
+        // Gmail's compose URL 400s when the ?body= value is long. Inline short letters directly;
+        // for long ones, copy the full text to the clipboard and prompt a paste so nothing is lost.
+        let body: String
+        if full.count <= 1200 {
+            body = full
+        } else {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(full, forType: .string)
+            body = headerText + "(This letter is long, so the full text was copied to your clipboard — press ⌘V to paste it in.)"
+        }
 
         var comps = URLComponents(string: "https://mail.google.com/mail/")!
         comps.queryItems = [
