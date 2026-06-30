@@ -2,6 +2,9 @@ import XCTest
 import Foundation
 @testable import CombrayCore
 
+// Core unit tests for the CombrayCore data layer. Every test runs against a fresh in-memory database
+// or a unique temp directory, so nothing here touches the user's real archive or credentials.
+
 // MARK: - Helpers
 
 /// A fresh in-memory archive (no disk, no migrations to clean up).
@@ -19,15 +22,19 @@ private func tempDir() -> URL {
 
 // MARK: - Plumbing
 
+/// The build links GRDB/SQLite and the schema migrates cleanly — the foundation everything sits on.
 final class PlumbingTests: XCTestCase {
+    /// The library exposes a positive schema version (sanity that the module is wired up).
     func testSchemaVersionIsPositive() {
         XCTAssertGreaterThan(Combray.schemaVersion, 0)
     }
 
+    /// GRDB is linked and the bundled SQLite is a real 3.x engine.
     func testGRDBLinksAndSQLiteOpens() throws {
         XCTAssertTrue(try Combray.sqliteVersion().hasPrefix("3."))
     }
 
+    /// An in-memory database opens, which means all migrations applied without error.
     func testInMemoryDatabaseOpens() throws {
         _ = try AppDatabase.makeInMemory()  // would throw if migrations failed
     }
@@ -35,7 +42,9 @@ final class PlumbingTests: XCTestCase {
 
 // MARK: - Archive CRUD
 
+/// Saving, fetching, deleting and ordering letters — the basic record lifecycle.
 final class ArchiveCRUDTests: XCTestCase {
+    /// A saved letter reads back with its fields intact and `pinned` defaulting to false.
     func testSaveAndFetchLetter() throws {
         let a = try makeArchive()
         var l = Letter(number: 1, title: "Hello", transcription: "Dear friend")
@@ -47,6 +56,7 @@ final class ArchiveCRUDTests: XCTestCase {
         XCTAssertFalse(back.pinned)             // default
     }
 
+    /// `nextLetterNumber()` returns one past the highest existing number (drives folder names).
     func testNextLetterNumberIncrements() throws {
         let a = try makeArchive()
         XCTAssertEqual(try a.nextLetterNumber(), 1)
@@ -55,6 +65,7 @@ final class ArchiveCRUDTests: XCTestCase {
         XCTAssertEqual(try a.nextLetterNumber(), 3)
     }
 
+    /// Deleting a letter removes it from the index.
     func testDeleteLetter() throws {
         let a = try makeArchive()
         let l = try a.save(Letter(number: 1))
@@ -62,6 +73,7 @@ final class ArchiveCRUDTests: XCTestCase {
         XCTAssertNil(try a.letter(id: l.id))
     }
 
+    /// The `pinned` flag is persisted across save/fetch.
     func testPinnedPersists() throws {
         let a = try makeArchive()
         var l = try a.save(Letter(number: 1))
@@ -70,6 +82,7 @@ final class ArchiveCRUDTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(try a.letter(id: l.id)).pinned)
     }
 
+    /// `allLetters()` returns newest-year first.
     func testAllLettersOrdersByYearDescending() throws {
         let a = try makeArchive()
         _ = try a.save(Letter(number: 1, dateYear: 1960))
@@ -81,7 +94,9 @@ final class ArchiveCRUDTests: XCTestCase {
 
 // MARK: - People, pages, participants
 
+/// The many-to-many edges — who's on a letter, its pages, and the derived people/years lists.
 final class ArchiveRelationsTests: XCTestCase {
+    /// A letter's sender + recipients are stored and read back as people.
     func testParticipantsRoundTrip() throws {
         let a = try makeArchive()
         let l = try a.save(Letter(number: 1))
@@ -91,6 +106,7 @@ final class ArchiveRelationsTests: XCTestCase {
         XCTAssertEqual(Set(parties.recipients.map(\.displayName)), ["Marcel", "Mum"])
     }
 
+    /// A letter's page rows are stored and read back by image path.
     func testPagesRoundTrip() throws {
         let a = try makeArchive()
         let l = try a.save(Letter(number: 3))
@@ -103,6 +119,7 @@ final class ArchiveRelationsTests: XCTestCase {
                        ["Letters/3/letter_3_page_1.jpg", "Letters/3/letter_3_page_2.jpg"])
     }
 
+    /// The distinct people across letters and the distinct years are both derived correctly.
     func testPeopleAndYears() throws {
         let a = try makeArchive()
         let l1 = try a.save(Letter(number: 1, dateYear: 1962))
@@ -116,7 +133,9 @@ final class ArchiveRelationsTests: XCTestCase {
 
 // MARK: - Full-text search
 
+/// The FTS5 index — finding letters by transcription body and by participant name.
 final class SearchTests: XCTestCase {
+    /// A word in the transcription matches only the letter that contains it.
     func testSearchFindsByTranscription() throws {
         let a = try makeArchive()
         let l1 = try a.save(Letter(number: 1, title: "A", transcription: "the quick brown fox"))
@@ -126,6 +145,7 @@ final class SearchTests: XCTestCase {
         XCTAssertEqual(hits.first?.letterId, l1.id)
     }
 
+    /// A sender's name is indexed alongside the body, so searching the name finds the letter.
     func testSearchFindsBySenderName() throws {
         let a = try makeArchive()
         let l = try a.save(Letter(number: 1, transcription: "nothing notable"))
@@ -133,6 +153,7 @@ final class SearchTests: XCTestCase {
         XCTAssertEqual(try a.search("Persephone").first?.letterId, l.id)
     }
 
+    /// A term that appears nowhere returns no hits.
     func testSearchEmptyForNoMatch() throws {
         let a = try makeArchive()
         _ = try a.save(Letter(number: 1, transcription: "hello world"))
@@ -142,11 +163,13 @@ final class SearchTests: XCTestCase {
 
 // MARK: - applyTranscription
 
+/// Applying a model result to a letter — fields, date parsing, people, and the composed title.
 final class ApplyTranscriptionTests: XCTestCase {
     private func decode(_ json: String) throws -> TranscriptionResult {
         try JSONDecoder().decode(TranscriptionResult.self, from: Data(json.utf8))
     }
 
+    /// A full result populates text, summary, date (+ parsed year/source), meta, quotes and people.
     func testAppliesAllFields() throws {
         let a = try makeArchive()
         let l = try a.save(Letter(number: 1))
@@ -173,6 +196,7 @@ final class ApplyTranscriptionTests: XCTestCase {
         XCTAssertEqual(parties.recipients.first?.displayName, "Marcel")
     }
 
+    /// When the model returns no title, one is composed from the type + sender/recipient.
     func testComposesTitleWhenModelGivesNone() throws {
         let a = try makeArchive()
         let l = try a.save(Letter(number: 1))
@@ -189,31 +213,37 @@ final class ApplyTranscriptionTests: XCTestCase {
 
 // MARK: - composedTitle (document-type aware)
 
+/// The fallback title builder — correspondence reads "Type to X from Y"; other docs use the summary.
 final class ComposedTitleTests: XCTestCase {
+    /// A letter composes "Letter to Bob from Alice".
     func testLetter() {
         XCTAssertEqual(
             Archive.composedTitle(documentType: "letter", sender: "Alice", recipients: ["Bob"], summary: ""),
             "Letter to Bob from Alice")
     }
 
+    /// A postcard is still correspondence, so it keeps the to/from framing.
     func testPostcardIsCorrespondence() {
         XCTAssertEqual(
             Archive.composedTitle(documentType: "postcard", sender: "Alice", recipients: ["Bob"], summary: ""),
             "Postcard to Bob from Alice")
     }
 
+    /// A non-correspondence type (a list) reads "Type — summary" instead of to/from.
     func testNonCorrespondenceUsesSummary() {
         XCTAssertEqual(
             Archive.composedTitle(documentType: "list", sender: "", recipients: [], summary: "weekly groceries"),
             "List — weekly groceries")
     }
 
+    /// A non-correspondence type with no summary falls back to just the capitalised kind.
     func testNonCorrespondenceNoSummaryFallsBackToKind() {
         XCTAssertEqual(
             Archive.composedTitle(documentType: "receipt", sender: "", recipients: [], summary: ""),
             "Receipt")
     }
 
+    /// A blank document type defaults to "Letter".
     func testDefaultsToLetterWhenTypeBlank() {
         XCTAssertEqual(
             Archive.composedTitle(documentType: "", sender: "Alice", recipients: [], summary: ""),
@@ -223,7 +253,9 @@ final class ComposedTitleTests: XCTestCase {
 
 // MARK: - Date parsing
 
+/// Extracting a 4-digit year from the partial date forms the model returns.
 final class DateParsingTests: XCTestCase {
+    /// Full and partial ISO dates yield the year; junk and 2-digit years yield nil.
     func testYearExtraction() {
         XCTAssertEqual(Archive.year(from: "1962"), 1962)
         XCTAssertEqual(Archive.year(from: "1962-03"), 1962)
@@ -236,7 +268,9 @@ final class DateParsingTests: XCTestCase {
 
 // MARK: - Backup (folder = source of truth)
 
+/// Writing/scanning `letter.json` (+ `transcription.txt`) and rebuilding the index from folders.
 final class BackupTests: XCTestCase {
+    /// A record written to disk scans back with its fields (incl. pinned + quotes) intact.
     func testWriteAndScanRoundTrip() throws {
         let dir = tempDir()
         let file = LetterFile(
@@ -262,8 +296,8 @@ final class BackupTests: XCTestCase {
         XCTAssertEqual(s.notableQuotes, ["wish you were here"])
     }
 
+    /// Backward-compat: a letter.json from before `pinned`/`notableQuotes` existed still decodes (→ nil).
     func testOldRecordWithoutNewFieldsStillDecodes() throws {
-        // A letter.json from before `pinned`/`notableQuotes` existed must still load (→ nil).
         let json = """
         {"number":1,"id":"x","date":{"source":"unknown"},"to":[],"meta":{},
          "transcription":"hi","pages":[],
@@ -278,6 +312,7 @@ final class BackupTests: XCTestCase {
         XCTAssertNil(file.title)
     }
 
+    /// Importing folder records rebuilds the DB rows (letter, pages, participants) — the cache recovery path.
     func testImportFromFilesRebuildsIndex() throws {
         let a = try makeArchive()
         let file = LetterFile(
@@ -298,7 +333,9 @@ final class BackupTests: XCTestCase {
 
 // MARK: - TranscriptionResult lenient decoding
 
+/// The model's JSON decodes leniently — a full object reads fully, a partial one fills defaults.
 final class TranscriptionResultTests: XCTestCase {
+    /// Every field of a complete result decodes into the struct.
     func testDecodesFullObject() throws {
         let r = try JSONDecoder().decode(TranscriptionResult.self, from: Data("""
         {"transcription":"t","title":"ti","document_type":"postcard","summary":"su",
@@ -315,8 +352,8 @@ final class TranscriptionResultTests: XCTestCase {
         XCTAssertEqual(r.meta.writer_goals, "g")
     }
 
+    /// A near-empty result doesn't throw; missing fields fall back to defaults.
     func testDecodesPartialObjectWithDefaults() throws {
-        // Missing most fields — lenient decode should fill defaults, not throw.
         let r = try JSONDecoder().decode(TranscriptionResult.self, from: Data("""
         {"transcription":"just text"}
         """.utf8))
@@ -330,7 +367,9 @@ final class TranscriptionResultTests: XCTestCase {
 
 // MARK: - Anthropic request schema (regression guard)
 
+/// Guards the structured-output schema so output fields can't silently go missing again.
 final class SchemaTests: XCTestCase {
+    /// Every output field is in `required` (once, dropping these left meta/summary empty) and present in properties.
     func testSchemaRequiresAllOutputFields() {
         let schema = AnthropicClient.schema
         let required = (schema["required"] as? [String]) ?? []
@@ -347,17 +386,21 @@ final class SchemaTests: XCTestCase {
 
 // MARK: - ImageStore
 
+/// Where images live on disk and how they're named/copied (ungated Application Support, lossless).
 final class ImageStoreTests: XCTestCase {
+    /// The archive root is under Application Support, never the TCC-gated Documents folder.
     func testDefaultRootIsApplicationSupport() {
         let root = ImageStore.defaultRoot().path
         XCTAssertTrue(root.contains("Application Support/Combray"), "got \(root)")
         XCTAssertFalse(root.contains("/Documents/"), "must not live in Documents")
     }
 
+    /// The images live under a capitalised `Letters/` directory.
     func testLettersDirIsCapitalised() {
         XCTAssertEqual(ImageStore(root: tempDir()).lettersDir.lastPathComponent, "Letters")
     }
 
+    /// Importing copies the original bytes verbatim to a logical `Letters/<n>/letter_<n>_page_<k>.<ext>` path.
     func testImportImageCopiesAndNames() throws {
         let store = ImageStore(root: tempDir())
         let src = tempDir().appendingPathComponent("scan.JPG")
@@ -373,7 +416,9 @@ final class ImageStoreTests: XCTestCase {
 
 // MARK: - Credentials (in-memory only — does NOT touch the real credentials file)
 
+/// Stored credential expiry + Codable round-trip (constructed in memory, never the real file).
 final class CredentialTests: XCTestCase {
+    /// OAuth tokens expire on their expiry date; API keys never report expired.
     func testOAuthExpiry() {
         let live = StoredCredential(kind: .oauth, accessToken: "a",
                                     expiresAt: Date().addingTimeInterval(3600))
@@ -384,6 +429,7 @@ final class CredentialTests: XCTestCase {
         XCTAssertFalse(StoredCredential(kind: .apiKey, apiKey: "k").isExpired)
     }
 
+    /// A credential survives an encode/decode round-trip with its tokens intact.
     func testCodableRoundTrip() throws {
         let cred = StoredCredential(kind: .oauth, accessToken: "tok", refreshToken: "ref",
                                     expiresAt: Date(timeIntervalSince1970: 1000))

@@ -1,16 +1,21 @@
 import XCTest
 @testable import CombrayCore
 
+/// Pretty English date formatting from the partial ISO forms (`1963`, `1963-11`, `1963-11-01`).
 final class DateDisplayTests: XCTestCase {
+    /// A full date renders as "1st November, 1963" (day with ordinal, month name, year).
     func testFullDateInEnglishWithOrdinal() {
         XCTAssertEqual(DateDisplay.pretty("1963-11-01"), "1st November, 1963")
     }
+    /// A year+month renders as "November 1963".
     func testMonthAndYear() {
         XCTAssertEqual(DateDisplay.pretty("1963-11"), "November 1963")
     }
+    /// A bare year renders as the year.
     func testYearOnly() {
         XCTAssertEqual(DateDisplay.pretty("1963"), "1963")
     }
+    /// Ordinal suffixes are correct, including the 11th–13th "th" exceptions and 21st/31st.
     func testOrdinalSuffixes() {
         XCTAssertEqual(DateDisplay.pretty("2000-01-02"), "2nd January, 2000")
         XCTAssertEqual(DateDisplay.pretty("2000-01-03"), "3rd January, 2000")
@@ -21,6 +26,7 @@ final class DateDisplayTests: XCTestCase {
         XCTAssertEqual(DateDisplay.pretty("2000-01-21"), "21st January, 2000")
         XCTAssertEqual(DateDisplay.pretty("2000-12-31"), "31st December, 2000")
     }
+    /// All twelve month names are spelled correctly.
     func testEveryMonthNameSpelledCorrectly() {
         let expected = ["January","February","March","April","May","June",
                         "July","August","September","October","November","December"]
@@ -29,10 +35,12 @@ final class DateDisplayTests: XCTestCase {
             XCTAssertEqual(DateDisplay.pretty("1963-\(mm)"), "\(name) 1963")
         }
     }
+    /// nil and whitespace-only input render as nil (nothing to show).
     func testNilAndEmptyAreNil() {
         XCTAssertNil(DateDisplay.pretty(nil))
         XCTAssertNil(DateDisplay.pretty("   "))
     }
+    /// A non-ISO string (e.g. "spring 1963") is passed through unchanged.
     func testNonIsoReturnedUnchanged() {
         XCTAssertEqual(DateDisplay.pretty("spring 1963"), "spring 1963")
     }

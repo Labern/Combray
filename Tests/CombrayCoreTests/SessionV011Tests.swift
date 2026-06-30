@@ -12,7 +12,9 @@ private func result(_ json: String) -> TranscriptionResult {
 
 // MARK: - People de-dup (new behaviours)
 
+/// The stronger merge: junk removal, owner aliases, parenthetical-prefix folding — without over-merging.
 final class MergePeopleV011Tests: XCTestCase {
+    /// A name with no real letters (e.g. ",") is deleted outright.
     func testJunkNamesAreDeleted() throws {
         let a = try arch()
         _ = try a.findOrCreatePerson(named: ",")
@@ -21,6 +23,7 @@ final class MergePeopleV011Tests: XCTestCase {
         XCTAssertEqual(try a.people().map(\.displayName), ["Alice"])
     }
 
+    /// "self" and the owner's own name fold into one person, shown as the owner name.
     func testOwnerAliasesFoldToOwnerName() throws {
         let a = try arch()
         _ = try a.findOrCreatePerson(named: "self")
@@ -29,6 +32,7 @@ final class MergePeopleV011Tests: XCTestCase {
         XCTAssertEqual(try a.people().map(\.displayName), ["Labern"])   // one entity, shown as the owner name
     }
 
+    /// Parenthesis-qualified variants sharing a leading name ("Claude (CLI agent)" / "Claude Code (CLI agents)") merge.
     func testParentheticalPrefixVariantsMerge() throws {
         let a = try arch()
         _ = try a.findOrCreatePerson(named: "Claude (CLI agent)")
@@ -37,6 +41,7 @@ final class MergePeopleV011Tests: XCTestCase {
         XCTAssertEqual(try a.people().count, 1)
     }
 
+    /// Distinct plain names that merely share a first word ("Anne" / "Anne Marie") are NOT merged.
     func testLeadingNameWithoutParensIsNotMerged() throws {
         let a = try arch()
         _ = try a.findOrCreatePerson(named: "Anne")
@@ -48,7 +53,10 @@ final class MergePeopleV011Tests: XCTestCase {
 
 // MARK: - Text-only metadata refresh (applyMetadata)
 
+/// Re-deriving summary/meta from edited text must refresh the analysis but leave the rest alone.
 final class ApplyMetadataTests: XCTestCase {
+    /// applyMetadata refreshes summary/meta/suspected-writer, but keeps transcription, title, date,
+    /// participants, document type and the (image-based) handwriting guess untouched.
     func testRefreshesDerivedFieldsButKeepsTheRest() throws {
         let a = try arch()
         let l = try a.save(Letter(number: 1))
@@ -82,22 +90,27 @@ final class ApplyMetadataTests: XCTestCase {
 
 // MARK: - Layout-significance fallback (legacy records without documentType)
 
+/// Old screenshots (no documentType) still render monospaced via the title + content-shape fallback.
 final class LayoutSignificanceFallbackTests: XCTestCase {
+    /// With no documentType, a strong screenshot word in the title triggers verbatim/monospaced rendering.
     func testTitleScreenshotWordTriggersVerbatimWhenNoDocType() {
         XCTAssertTrue(TextReflow.isLayoutSignificant(
             documentType: nil, title: "Screenshot of two Claude Code sessions", transcription: "anything"))
     }
 
+    /// With no documentType, content that looks like code/terminal triggers verbatim rendering.
     func testCodeShapedContentTriggersVerbatimWhenNoDocType() {
         let code = "func main() {\n    let x = compute()\n    print(x)\n    return\n}"
         XCTAssertTrue(TextReflow.isLayoutSignificant(documentType: nil, title: "Notes", transcription: code))
     }
 
+    /// Ordinary prose stays reflowed even with a vaguely "screenshot"-ish title absent.
     func testProseLetterStaysReflowed() {
         let prose = "Dear Anne,\n\nIt was lovely to hear from you after all these long months apart.\n\nYours, M."
         XCTAssertFalse(TextReflow.isLayoutSignificant(documentType: nil, title: "A long letter", transcription: prose))
     }
 
+    /// An explicit documentType wins over the title heuristic ("letter" stays reflowed).
     func testExplicitDocTypeIsAuthoritativeOverTitle() {
         // documentType "letter" wins even if the title mentions a screenshot.
         XCTAssertFalse(TextReflow.isLayoutSignificant(
@@ -107,7 +120,9 @@ final class LayoutSignificanceFallbackTests: XCTestCase {
 
 // MARK: - Additive fields round-trip (folders are the source of truth)
 
+/// The new fields survive backup→rebuild, and old records lacking them still load — the compat promise.
 final class AdditiveFieldsRoundTripTests: XCTestCase {
+    /// documentType + handwriting + suspected-writer survive letter.json backup and a fresh-archive rebuild.
     func testDocumentTypeAndHandwritingSurviveBackupAndRebuild() throws {
         let a = try arch()
         let l = try a.save(Letter(number: 1))
@@ -132,6 +147,7 @@ final class AdditiveFieldsRoundTripTests: XCTestCase {
         XCTAssertEqual(imported.metaSuspectedWriter, "Eleanor")
     }
 
+    /// A letter.json from an older version (no new fields) decodes with nil defaults and keeps its data.
     func testOldRecordWithoutNewFieldsDecodesWithNilDefaults() throws {
         // A letter.json written by an older version (no documentType / handwriting / suspectedWriter).
         let oldJSON = """
