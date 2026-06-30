@@ -29,6 +29,17 @@ struct RootView: View {
             }
             .overlay(alignment: .bottom) { statusBar }
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Button { c.goHome() } label: {
+                        HStack(spacing: 8) {
+                            MadeleineIcon().frame(width: 22, height: 22)
+                            Text("Combray").font(Theme.serif(18, .bold)).foregroundStyle(Theme.ink)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(TapStyle(scale: 0.95))
+                    .help("Home — back to the main page")
+                }
                 ToolbarItemGroup(placement: .primaryAction) {
                     if c.isTranscribing {
                         TranscribeSpinner()
