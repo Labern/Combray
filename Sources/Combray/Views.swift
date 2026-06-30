@@ -65,6 +65,13 @@ struct RootView: View {
         }
         .background(Theme.bg)
         .preferredColorScheme(darkMode ? .dark : .light)
+        .overlay {
+            if let letter = c.fullSizeLetter {
+                FullTranscriptionView(letter: letter).environmentObject(c)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: c.fullSizeLetter)
         .onAppear { installMadeleineDockIcon() }
         .sheet(isPresented: $c.showAddChoice) { AddLetterSheet().environmentObject(c) }
         .sheet(isPresented: $c.showReplaceChoice) { ReplaceChoiceSheet().environmentObject(c) }

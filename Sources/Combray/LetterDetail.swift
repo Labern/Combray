@@ -81,7 +81,6 @@ struct LetterDetailView: View {
     @State private var isEditing = false
     @State private var showChat = false
     @State private var showAsk = false
-    @State private var showFullSize = false
     @State private var copied = false
     @State private var titleText = ""
     @State private var fromText = ""
@@ -254,16 +253,13 @@ struct LetterDetailView: View {
                     Text("Transcription").font(Theme.label).foregroundStyle(Theme.faint)
                     Spacer()
                     if !letter.transcription.isEmpty {
-                        Button { showFullSize = true } label: {
+                        Button { c.fullSizeLetter = letter } label: {
                             Label("View full size", systemImage: "arrow.up.left.and.arrow.down.right")
                                 .font(Theme.small)
                         }
                         .buttonStyle(TapStyle())
                         .foregroundStyle(Theme.accentDeep)
                         .help("Open the transcription in a big, beautiful reading window")
-                        .popover(isPresented: $showFullSize, arrowEdge: .top) {
-                            FullTranscriptionView(letter: letter, presented: $showFullSize).environmentObject(c)
-                        }
                     }
                 }
                 if isEditing {
@@ -470,17 +466,31 @@ struct TranscriptionText: View {
     }
 }
 
-/// The "View full size" pop-over: the transcription, big and beautifully set, for clear reading.
-/// Dismisses on Close or on a click outside (native popover behaviour).
+/// The "View full size" reading view: a dimmed scrim filling the window with the transcription
+/// card centred in the middle. Big and beautifully set. Dismisses on Close or a click outside.
 struct FullTranscriptionView: View {
+    @EnvironmentObject var c: ArchiveController
     let letter: Letter
-    @Binding var presented: Bool
+
+    private func close() { c.fullSizeLetter = nil }
 
     var body: some View {
+        ZStack {
+            Color.black.opacity(0.40).ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { close() }          // click outside the card → dismiss
+            card
+                .frame(maxWidth: 820, maxHeight: 880)
+                .padding(28)
+                .shadow(color: .black.opacity(0.35), radius: 44, y: 18)
+        }
+    }
+
+    private var card: some View {
         VStack(spacing: 0) {
             HStack {
                 Spacer()
-                Button { presented = false } label: { Label("Close", systemImage: "xmark") }
+                Button { close() } label: { Label("Close", systemImage: "xmark") }
                     .buttonStyle(BigButtonStyle(filled: false, compact: true))
             }
             .padding(.horizontal, 20).padding(.vertical, 14)
@@ -498,13 +508,14 @@ struct FullTranscriptionView: View {
                                       serifSize: 24, monoSize: 17, paragraphSpacing: 20)
                         .padding(.top, 6)
                 }
-                .padding(.horizontal, 60).padding(.vertical, 44)
+                .padding(.horizontal, 56).padding(.vertical, 40)
                 .frame(maxWidth: 760, alignment: .leading)
-                .frame(maxWidth: .infinity)   // centre the reading column
+                .frame(maxWidth: .infinity)   // centre the reading column within the card
             }
         }
-        .frame(width: 820, height: 860)
-        .background(Theme.bg)
+        .background(RoundedRectangle(cornerRadius: 20).fill(Theme.bg))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.line))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 }
 

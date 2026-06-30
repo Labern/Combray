@@ -175,6 +175,7 @@ public struct AnthropicClient: Sendable {
                                  "text": "You are Claude Code, Anthropic's official CLI for Claude."])
         }
         systemBlocks.append(["type": "text", "text": Self.instruction])
+        systemBlocks.append(["type": "text", "text": Self.dateAnchor()])
         if let ownerContext, !ownerContext.isEmpty {
             systemBlocks.append(["type": "text",
                                  "text": "About the archive owner (use for meta.suspected_writer): \(ownerContext)"])
@@ -320,6 +321,7 @@ public struct AnthropicClient: Sendable {
                                  "text": "You are Claude Code, Anthropic's official CLI for Claude."])
         }
         systemBlocks.append(["type": "text", "text": Self.analyzeInstruction])
+        systemBlocks.append(["type": "text", "text": Self.dateAnchor()])
         if let ownerContext, !ownerContext.isEmpty {
             systemBlocks.append(["type": "text",
                                  "text": "About the archive owner (use for meta.suspected_writer): \(ownerContext)"])
@@ -475,6 +477,20 @@ public struct AnthropicClient: Sendable {
               let jpeg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
         else { throw AnthropicError.badImage(url.lastPathComponent) }
         return jpeg
+    }
+
+    /// Today's date (the user's local date), with guidance so dates are anchored to *now* — the model
+    /// otherwise tends to date undated digital content (e.g. screenshots) to its training era.
+    static func dateAnchor() -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        let today = f.string(from: Date())
+        return "Today's date is \(today). Anchor all relative or recent dates to it. In particular, "
+            + "screenshots and other digital content with no explicit visible date were almost "
+            + "certainly captured recently (on or near \(today)) — never date them to an earlier year "
+            + "from your training data."
     }
 
     static let instruction = """

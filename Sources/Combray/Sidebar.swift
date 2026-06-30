@@ -47,7 +47,7 @@ struct SidebarView: View {
             Button { c.showFindLetter = true } label: {
                 Label("Find a specific letter", systemImage: "sparkle.magnifyingglass")
             }
-            .buttonStyle(BigButtonStyle(fullWidth: true))
+            .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
             .padding(.horizontal, Theme.gap)
 
             ModeSelector(mode: $mode)

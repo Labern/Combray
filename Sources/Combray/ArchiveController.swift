@@ -59,6 +59,8 @@ final class ArchiveController: ObservableObject {
     @Published var hits: [SearchHit] = []
     /// Shows the AI "Find a specific letter" window.
     @Published var showFindLetter = false
+    /// The letter shown in the centered "View full size" reading overlay (nil = hidden).
+    @Published var fullSizeLetter: Letter?
 
     // Status
     @Published var busy: String?
