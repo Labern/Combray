@@ -263,16 +263,10 @@ struct LetterDetailView: View {
                         .font(Theme.body).foregroundStyle(Theme.faint).italic()
                 } else {
                     transcriptionView
-                    HStack(spacing: 12) {
-                        Button { showAsk = true } label: {
-                            Label("Ask about the transcription", systemImage: "text.bubble")
-                        }
-                        .buttonStyle(BigButtonStyle())
-                        Button { draft = letter.transcription; isEditing = true } label: {
-                            Label("Edit", systemImage: "pencil")
-                        }
-                        .buttonStyle(BigButtonStyle(filled: false))
+                    Button { draft = letter.transcription; isEditing = true } label: {
+                        Label("Edit", systemImage: "pencil")
                     }
+                    .buttonStyle(BigButtonStyle(filled: false))
                 }
 
                 if let summary = letter.summary {
@@ -333,20 +327,25 @@ struct LetterDetailView: View {
 
     private var actions: some View {
         VStack(spacing: 12) {
+            // 1 · Ask (full width) — once there's a transcription to ask about.
+            if !letter.transcription.isEmpty {
+                Button { showAsk = true } label: {
+                    Label("Ask about the transcription", systemImage: "text.bubble")
+                }
+                .buttonStyle(BigButtonStyle(fullWidth: true))
+            }
+
+            // 2 · Transcribe / Re-transcribe (full width).
             Button { Task { await c.transcribeSelected() } } label: {
                 Label(letter.transcription.isEmpty ? "Transcribe" : "Re-transcribe", systemImage: "sparkles")
             }
             .buttonStyle(BigButtonStyle(fullWidth: true))
 
+            // 3 · Copy / Export / Share — a third each (stacking only when the pane is tiny).
             let actionsLayout = actionsStacked
                 ? AnyLayout(VStackLayout(spacing: 12))
                 : AnyLayout(HStackLayout(spacing: 12))
             actionsLayout {
-                if c.correspondence(forLetter: letter.id).count > 1 {
-                    Button { showChat = true } label: {
-                        Label("Chat", systemImage: "bubble.left.and.bubble.right")
-                    }.buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
-                }
                 Button { copyTranscript() } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                 }
@@ -356,6 +355,13 @@ struct LetterDetailView: View {
                     .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
                 Button { c.shareViaGmail(letter) } label: { Label("Share", systemImage: "paperplane") }
                     .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
+            }
+
+            // Correspondence chat — conditional, kept below the main actions.
+            if c.correspondence(forLetter: letter.id).count > 1 {
+                Button { showChat = true } label: {
+                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                }.buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
             }
 
             if copied {
