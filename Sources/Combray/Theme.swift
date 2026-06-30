@@ -424,8 +424,8 @@ func renderLetterPreviewPNG(to path: String) {
     let style = NSMutableParagraphStyle()
     style.alignment = .justified
     style.lineSpacing = serif * 0.43
-    style.paragraphSpacing = 24
-    let body = TextReflow.paragraphs(sample).joined(separator: "\n\n")
+    style.paragraphSpacing = 18
+    let body = TextReflow.paragraphs(sample).joined(separator: "\n")
     let attr = NSAttributedString(string: body, attributes: [
         .font: font, .foregroundColor: NSColor.black, .paragraphStyle: style])
 

@@ -474,7 +474,7 @@ struct TranscriptionText: View {
     var title: String? = nil
     var serifSize: CGFloat = 21
     var monoSize: CGFloat = 16
-    var paragraphSpacing: CGFloat = 24
+    var paragraphSpacing: CGFloat = 18
 
     var body: some View {
         if TextReflow.isLayoutSignificant(documentType: documentType, title: title, transcription: transcription) {
@@ -486,7 +486,7 @@ struct TranscriptionText: View {
         } else {
             // Letters: justified, flowing paragraphs separated by real space (blank lines → \n\n).
             JustifiedText(
-                text: TextReflow.paragraphs(transcription).joined(separator: "\n\n"),
+                text: TextReflow.paragraphs(transcription).joined(separator: "\n"),
                 font: NSFont(name: "Hoefler Text", size: serifSize) ?? .systemFont(ofSize: serifSize),
                 color: Theme.inkNS,
                 lineSpacing: serifSize * 0.43,
@@ -535,7 +535,7 @@ struct FullTranscriptionView: View {
                         Text(date).font(Theme.sans(15)).foregroundStyle(Theme.faint)
                     }
                     TranscriptionText(transcription: letter.transcription, documentType: letter.documentType,
-                                      title: letter.title, serifSize: 24, monoSize: 17, paragraphSpacing: 28)
+                                      title: letter.title, serifSize: 24, monoSize: 17, paragraphSpacing: 20)
                         .padding(.top, 6)
                 }
                 .padding(.horizontal, 56).padding(.vertical, 40)
