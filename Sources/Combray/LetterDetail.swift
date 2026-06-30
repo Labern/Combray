@@ -150,50 +150,57 @@ struct LetterDetailView: View {
     }
 
     private var pages: some View {
-        ScrollView {
-            VStack(spacing: Theme.gap) {
-                ForEach(Array(c.pages.enumerated()), id: \.element.id) { idx, page in
-                    if let image = loadImage(c.images.url(for: page)) {
-                        VStack(spacing: 8) {
-                            ZoomableImage(image: image)
-                                .frame(maxWidth: .infinity)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
-                                .contextMenu {
-                                    Button { c.beginReplace(page) } label: {
-                                        Label("Replace image…", systemImage: "photo.on.rectangle")
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: Theme.gap) {
+                    ForEach(Array(c.pages.enumerated()), id: \.element.id) { idx, page in
+                        if let image = loadImage(c.images.url(for: page)) {
+                            VStack(spacing: 8) {
+                                ZoomableImage(image: image)
+                                    .frame(maxWidth: .infinity)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+                                    .contextMenu {
+                                        Button { c.beginReplace(page) } label: {
+                                            Label("Replace image…", systemImage: "photo.on.rectangle")
+                                        }
+                                        Button(role: .destructive) { c.pendingDeletePage = page } label: {
+                                            Label("Delete image", systemImage: "trash")
+                                        }
                                     }
-                                    Button(role: .destructive) { c.pendingDeletePage = page } label: {
-                                        Label("Delete image", systemImage: "trash")
-                                    }
-                                }
-                            pageControls(page, number: idx + 1)
+                                pageControls(page, number: idx + 1)
+                            }
                         }
                     }
+                    if c.pages.isEmpty {
+                        Text("No page images yet — add the first below.")
+                            .font(Theme.body).foregroundStyle(Theme.faint).padding(.vertical, 30)
+                    }
+                    addPageButton
                 }
-                if c.pages.isEmpty {
-                    Text("No page images yet — add the first below.")
-                        .font(Theme.body).foregroundStyle(Theme.faint).padding(.vertical, 30)
-                }
-                addPageButton
-
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("You can resize the sections to see more of the image or the transcription.")
-                    Text("Click the sidebar ")
-                        + Text(Image(systemName: "sidebar.left"))
-                        + Text(" to open and close the sidebar.")
-                }
-                .font(.system(size: 16))
-                .foregroundStyle(Theme.faint)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: 460, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 18)
-                .padding(.bottom, 10)
+                .padding(Theme.gap)
             }
-            .padding(Theme.gap)
+            Divider()
+            imageHints
         }
         .background(Theme.surface)
+    }
+
+    /// How-to hints pinned at the bottom of the image pane, near the footer.
+    private var imageHints: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("You can resize the sections to see more of the image or the transcription.")
+            Text("Click the sidebar ")
+                + Text(Image(systemName: "sidebar.left"))
+                + Text(" to open and close the sidebar.")
+        }
+        .font(.system(size: 16))
+        .foregroundStyle(Theme.faint)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: 460, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 14)
+        .padding(.horizontal, Theme.gap)
     }
 
     /// Subtle per-page strip beneath each image: which page it is, plus visible Replace / Remove.

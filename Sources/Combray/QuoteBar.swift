@@ -4,30 +4,44 @@ import CoreImage
 import UniformTypeIdentifiers
 import CombrayCore
 
-// MARK: - Quote bar (cycling Proust)
+// MARK: - Quote bar (cycling app tips)
 
-enum ProustQuotes {
+/// Short how-to tips that rotate along the footer — a new one each time, cycling through all of them.
+enum AppTips {
     static let all = [
-        "The only real voyage of discovery consists not in seeking new landscapes, but in having new eyes.",
-        "We do not receive wisdom, we must discover it for ourselves after a journey that no one can take for us.",
-        "Remembrance of things past is not necessarily the remembrance of things as they were.",
-        "Let us be grateful to people who make us happy; they are the charming gardeners who make our souls blossom.",
-        "A change in the weather is sufficient to recreate the world and ourselves.",
-        "Time, which changes people, does not alter the image we have retained of them.",
-        "Love is space and time measured by the heart.",
-        "We are healed of a suffering only by experiencing it to the full."
+        "Drag a photo of a letter anywhere onto the window to start a new entry.",
+        "Photograph pages with your iPhone — scan the QR code and they fly to your Mac.",
+        "Hover any button for a moment to see exactly what it does.",
+        "Use “Find a specific letter” to search by theme, period, writer, or a pair of people.",
+        "Ask Claude about a transcription — it can propose a fix you apply in one click.",
+        "Edit a transcription and Combray refreshes the summary and meta to match.",
+        "Letters are reflowed into a beautiful read; screenshots keep their exact layout.",
+        "Right-click a page image to replace it with a clearer photo, or delete it.",
+        "Add more pages to a letter with the ＋ button under the last image.",
+        "Click “View full size” to read a transcription big and centred.",
+        "Drag the divider between the image and the text to resize either side.",
+        "Pin up to three important letters to the top of the sidebar (right-click a letter).",
+        "Browse by People to see everyone someone corresponded with.",
+        "Browse by Years to read your archive as a timeline.",
+        "Tell Combray about yourself in Settings so it can spot letters you wrote.",
+        "Export any letter to Word (.docx) in the same beautiful font you read on screen.",
+        "Share a letter straight to a Gmail draft with one click.",
+        "Switch between Light and Dark mode with the moon/sun in the toolbar.",
+        "Back up every letter to iCloud Drive from the bottom-left.",
+        "The folders on disk are the real archive — Combray can always rebuild from them.",
+        "Stuck? Tap the headset to ask Labern, or the lightbulb to request a feature."
     ]
 }
 
 struct QuoteBar: View {
     @EnvironmentObject var c: ArchiveController
-    @State private var index = 0
-    private let timer = Timer.publish(every: 20, on: .main, in: .common).autoconnect()
+    @State private var index = Int.random(in: 0..<AppTips.all.count)
+    private let timer = Timer.publish(every: 18, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack {
-            Text("\u{201C}\(ProustQuotes.all[index])\u{201D}  — Proust, In Search of Lost Time")
-                .font(.system(size: 15)).italic()
+            Label(AppTips.all[index], systemImage: "lightbulb")
+                .font(.system(size: 15))
                 .foregroundStyle(Theme.faint)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .multilineTextAlignment(.center)
@@ -36,7 +50,7 @@ struct QuoteBar: View {
                 .id(index)
                 .transition(.opacity)
                 .onReceive(timer) { _ in
-                    withAnimation(.easeInOut(duration: 0.8)) { index = (index + 1) % ProustQuotes.all.count }
+                    withAnimation(.easeInOut(duration: 0.8)) { index = (index + 1) % AppTips.all.count }
                 }
 
             HStack {
