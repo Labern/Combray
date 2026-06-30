@@ -10,7 +10,6 @@ enum SidebarMode: String, CaseIterable, Identifiable {
     case letters = "Letters"
     case people = "People"
     case years = "Years"
-    case search = "Search"
     var id: String { rawValue }
 }
 

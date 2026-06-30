@@ -56,4 +56,33 @@ public enum TextReflow {
                        "spreadsheet"]
         return markers.contains { t.contains($0) }
     }
+
+    /// Display-time check that also handles **legacy records** with no `documentType` (written before
+    /// it was captured): falls back to strong screenshot words in the title and to the code/terminal
+    /// *shape* of the content. Used for rendering and export so old screenshots still show monospaced.
+    public static func isLayoutSignificant(documentType: String?, title: String?, transcription: String) -> Bool {
+        if let dt = documentType?.trimmingCharacters(in: .whitespaces), !dt.isEmpty {
+            return isLayoutSignificant(dt)                              // authoritative when present
+        }
+        let t = (title ?? "").lowercased()
+        let strongTitleWords = ["screenshot", "screen shot", "screengrab", "screen grab", "screen capture"]
+        if strongTitleWords.contains(where: t.contains) { return true }
+        return looksLikeCodeOrTerminal(transcription)
+    }
+
+    /// Conservative heuristic: does this text look like code or terminal output (heavy indentation or
+    /// code/CLI punctuation), as opposed to prose? Only used when no document type is recorded.
+    static func looksLikeCodeOrTerminal(_ text: String) -> Bool {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard lines.count >= 4 else { return false }
+        var indented = 0, codey = 0
+        for line in lines {
+            if line.hasPrefix("  ") || line.hasPrefix("\t") { indented += 1 }
+            if line.hasPrefix("$ ") || line.hasPrefix("> ") || line.contains(" => ")
+                || line.contains("();") || line.contains("://") || line.contains("{")
+                || line.contains("()") { codey += 1 }
+        }
+        let n = Double(lines.count)
+        return Double(indented) / n > 0.30 || Double(codey) / n > 0.35
+    }
 }

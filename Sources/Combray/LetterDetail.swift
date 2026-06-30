@@ -174,12 +174,17 @@ struct LetterDetailView: View {
                 }
                 addPageButton
 
-                Text("You can resize the sections to see more of the image or the transcription.")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Theme.faint)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 10)
+                VStack(spacing: 7) {
+                    Text("You can resize the sections to see more of the image or the transcription.")
+                    Text("Click the sidebar ")
+                        + Text(Image(systemName: "sidebar.left"))
+                        + Text(" to open and close the sidebar.")
+                }
+                .font(.system(size: 16))
+                .foregroundStyle(Theme.faint)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 12)
             }
             .padding(Theme.gap)
         }
@@ -321,8 +326,9 @@ struct LetterDetailView: View {
     /// "letter view" (paragraphs are paragraphs, no early wrapping, capped reading width); computer
     /// screenshots / code keep their exact whitespace as transcribed.
     @ViewBuilder private var transcriptionView: some View {
-        let layoutSignificant = TextReflow.isLayoutSignificant(letter.documentType)
-        TranscriptionText(transcription: letter.transcription, documentType: letter.documentType)
+        let layoutSignificant = TextReflow.isLayoutSignificant(
+            documentType: letter.documentType, title: letter.title, transcription: letter.transcription)
+        TranscriptionText(transcription: letter.transcription, documentType: letter.documentType, title: letter.title)
             .frame(maxWidth: layoutSignificant ? .infinity : 680, alignment: .leading)
     }
 
@@ -440,12 +446,13 @@ struct MetaPanel: View {
 struct TranscriptionText: View {
     let transcription: String
     let documentType: String?
+    var title: String? = nil
     var serifSize: CGFloat = 21
     var monoSize: CGFloat = 16
     var paragraphSpacing: CGFloat = 16
 
     var body: some View {
-        if TextReflow.isLayoutSignificant(documentType) {
+        if TextReflow.isLayoutSignificant(documentType: documentType, title: title, transcription: transcription) {
             Text(transcription)
                 .font(.system(size: monoSize, design: .monospaced))
                 .lineSpacing(6)
@@ -505,7 +512,7 @@ struct FullTranscriptionView: View {
                         Text(date).font(Theme.sans(15)).foregroundStyle(Theme.faint)
                     }
                     TranscriptionText(transcription: letter.transcription, documentType: letter.documentType,
-                                      serifSize: 24, monoSize: 17, paragraphSpacing: 20)
+                                      title: letter.title, serifSize: 24, monoSize: 17, paragraphSpacing: 20)
                         .padding(.top, 6)
                 }
                 .padding(.horizontal, 56).padding(.vertical, 40)

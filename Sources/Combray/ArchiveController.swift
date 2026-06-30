@@ -141,7 +141,7 @@ final class ArchiveController: ObservableObject {
         }
         // Folders are the source of truth — rebuild any missing index rows from disk.
         try? archive.importFromFiles(Backup.scan(lettersDir: store.lettersDir))
-        try? archive.mergeDuplicatePeople()
+        try? archive.mergeDuplicatePeople(ownerName: ownerName)
         reload()
 
         capture.onURL = { [weak self] url in Task { @MainActor in self?.captureURL = url } }
@@ -223,7 +223,7 @@ final class ArchiveController: ObservableObject {
 
     func reload() {
         do {
-            try? archive.mergeDuplicatePeople()
+            try? archive.mergeDuplicatePeople(ownerName: ownerName)
             letters = try archive.allLetters()
             people = try archive.people()
             years = try archive.years()
@@ -862,7 +862,8 @@ final class ArchiveController: ObservableObject {
 
         // Mirror how it reads in the app: letters/written docs in a beautiful serif, reflowed into
         // paragraphs; screenshots / code verbatim in a monospaced face.
-        let layoutSignificant = TextReflow.isLayoutSignificant(letter.documentType)
+        let layoutSignificant = TextReflow.isLayoutSignificant(
+            documentType: letter.documentType, title: letter.title, transcription: letter.transcription)
 
         let doc = NSMutableAttributedString()
         if let title = letter.title {

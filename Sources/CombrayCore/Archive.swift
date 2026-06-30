@@ -140,11 +140,17 @@ public struct Archive: Sendable {
         }
     }
 
-    /// Folds clearly-duplicate people (e.g. "labern" and "labern (user)") into one entity, keeping the
-    /// simplest name and re-pointing every letter's participants at it.
-    public func mergeDuplicatePeople() throws {
+    /// Folds clearly-duplicate people into one entity and removes junk names, keeping the simplest
+    /// name and re-pointing every letter's participants at it. Handles:
+    ///   • junk names with no real letters (e.g. "," ) → deleted;
+    ///   • owner aliases ("self"/"me"/"myself"/"i" and the owner's own name) → one person;
+    ///   • spelling/parenthesis variants ("labern", "labern (user)");
+    ///   • parenthesis-qualified variants sharing a leading name ("Claude (CLI agent)" and
+    ///     "Claude Code (CLI agents)") — distinct plain names like "Anne" / "Anne Marie" are left.
+    public func mergeDuplicatePeople(ownerName: String? = nil) throws {
         try dbWriter.write { db in
             let all = try Person.fetchAll(db)
+            func hadParen(_ s: String) -> Bool { s.contains("(") }
             func norm(_ s: String) -> String {
                 var t = s.lowercased()
                 while let o = t.firstIndex(of: "("), let c = t[o...].firstIndex(of: ")") {
@@ -153,25 +159,56 @@ public struct Archive: Sendable {
                 t = t.replacingOccurrences(of: "[^a-z0-9 ]", with: " ", options: .regularExpression)
                 return t.split(separator: " ").joined(separator: " ")
             }
-            var groups: [String: [Person]] = [:]
-            for p in all {
-                let key = norm(p.displayName)
-                guard !key.isEmpty else { continue }
-                groups[key, default: []].append(p)
+            func words(_ s: String) -> [String] { s.split(separator: " ").map(String.init) }
+
+            // 1. Delete junk people (no real name) — the cascade removes their roles too.
+            for p in all where norm(p.displayName).isEmpty { _ = try Person.deleteOne(db, key: p.id) }
+            let people = all.filter { !norm($0.displayName).isEmpty }
+
+            // 2. Owner aliases.
+            let ownerNorm = ownerName.map(norm) ?? ""
+            let ownerAliases: Set<String> = ["self", "me", "myself", "i"]
+            func isOwner(_ n: String) -> Bool { (!ownerNorm.isEmpty && n == ownerNorm) || ownerAliases.contains(n) }
+
+            // 3. For parenthesis-qualified names, collapse onto the shortest paren-qualified name
+            //    whose words are a leading prefix (so the two "Claude … (CLI …)" fold together).
+            let parenNorms = people.filter { hadParen($0.displayName) }.map { norm($0.displayName) }
+            func prefixKey(_ n: String) -> String {
+                var best = n
+                for m in parenNorms where words(m).count < words(best).count && Array(words(n).prefix(words(m).count)) == words(m) {
+                    best = m
+                }
+                return best
             }
-            for (_, members) in groups where members.count > 1 {
-                // canonical = prefer no-parenthesis, then shortest, then alphabetical
-                let canonical = members.sorted { a, b in
-                    let ap = a.displayName.contains("("), bp = b.displayName.contains("(")
-                    if ap != bp { return !ap }
-                    if a.displayName.count != b.displayName.count { return a.displayName.count < b.displayName.count }
-                    return a.displayName < b.displayName
-                }.first!
+            func groupKey(_ p: Person) -> String {
+                let n = norm(p.displayName)
+                if isOwner(n) { return "##owner##" }
+                return hadParen(p.displayName) ? prefixKey(n) : n
+            }
+
+            var groups: [String: [Person]] = [:]
+            for p in people { groups[groupKey(p), default: []].append(p) }
+
+            func simpler(_ a: Person, _ b: Person) -> Bool {
+                let ap = a.displayName.contains("("), bp = b.displayName.contains("(")
+                if ap != bp { return !ap }
+                if a.displayName.count != b.displayName.count { return a.displayName.count < b.displayName.count }
+                return a.displayName < b.displayName
+            }
+
+            for (key, members) in groups where members.count > 1 {
+                var canonical = members.sorted(by: simpler).first!
+                // For the owner, prefer the person literally named the owner; show the owner's name.
+                if key == "##owner##", let ownerName, !ownerName.trimmingCharacters(in: .whitespaces).isEmpty {
+                    canonical = members.first { norm($0.displayName) == ownerNorm } ?? canonical
+                    if canonical.displayName != ownerName {
+                        try db.execute(sql: "UPDATE person SET displayName = ? WHERE id = ?",
+                                       arguments: [ownerName, canonical.id])
+                    }
+                }
                 for dup in members where dup.id != canonical.id {
-                    // move this person's letter roles onto the canonical (skip roles that already exist)
                     try db.execute(sql: "UPDATE OR IGNORE letterPerson SET personId = ? WHERE personId = ?",
                                    arguments: [canonical.id, dup.id])
-                    // deleting the dup cascades away any leftover duplicate roles + relationships
                     _ = try Person.deleteOne(db, key: dup.id)
                 }
             }

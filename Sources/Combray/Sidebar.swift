@@ -36,14 +36,6 @@ struct SidebarView: View {
 
             list
 
-            if mode == .search {
-                TextField("Search all letters…", text: $c.searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Theme.big)
-                    .padding(.horizontal, Theme.gap)
-                    .onChange(of: c.searchText) { _, _ in c.runSearch() }
-            }
-
             Button { c.showFindLetter = true } label: {
                 Label("Find a specific letter", systemImage: "sparkle.magnifyingglass")
             }
@@ -87,9 +79,6 @@ struct SidebarView: View {
         switch mode {
         case .letters:
             return "\(total) letter\(total == 1 ? "" : "s")"
-        case .search:
-            if c.searchText.trimmingCharacters(in: .whitespaces).isEmpty { return "\(total) letters" }
-            return "Showing \(c.hits.count) of \(total) letters"
         case .people:
             let p = c.people.count
             return "\(p) \(p == 1 ? "person" : "people") · \(total) letters"
@@ -120,18 +109,6 @@ struct SidebarView: View {
                         Text(String(year)).font(Theme.section)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 10)
                         ForEach(c.letters.filter { $0.dateYear == year }) { letterRowItem($0) }
-                    }
-                case .search:
-                    ForEach(c.hits, id: \.letterId) { hit in
-                        let letter = c.letters.first { $0.id == hit.letterId }
-                        if let letter {
-                            SidebarRow(letter: letter, onOpen: { c.showLetter(hit.letterId) }) {
-                                SearchRow(hit: hit, letter: letter)
-                            }
-                        } else {
-                            SearchRow(hit: hit, letter: nil)
-                                .onTapGesture { c.showLetter(hit.letterId) }
-                        }
                     }
                 }
             }
