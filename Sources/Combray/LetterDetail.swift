@@ -173,6 +173,13 @@ struct LetterDetailView: View {
                         .font(Theme.body).foregroundStyle(Theme.faint).padding(.vertical, 30)
                 }
                 addPageButton
+
+                Text("You can resize the sections to see more of the image or the transcription.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.faint.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 6)
             }
             .padding(Theme.gap)
         }
@@ -314,7 +321,7 @@ struct LetterDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 ForEach(Array(TextReflow.paragraphs(letter.transcription).enumerated()), id: \.offset) { _, para in
                     Text(para)
-                        .font(Theme.serif(20))
+                        .font(Theme.letterFace(21))
                         .lineSpacing(9)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)

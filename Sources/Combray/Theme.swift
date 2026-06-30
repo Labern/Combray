@@ -35,6 +35,11 @@ enum Theme {
     static func serif(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .serif)
     }
+    /// The beautiful book serif used to read transcribed letters & written documents.
+    /// Hoefler Text ships with macOS; falls back gracefully to the system serif.
+    static func letterFace(_ size: CGFloat) -> Font {
+        .custom("Hoefler Text", size: size)
+    }
     static let wordmark = serif(56, .bold)
     static let wordmarkSmall = serif(27, .bold)
     static let hero = sans(46, .bold)
