@@ -17,6 +17,7 @@ struct RootView: View {
     @EnvironmentObject var c: ArchiveController
     @State private var mode: SidebarMode = .letters
     @AppStorage("darkMode") private var darkMode = false
+    @State private var showFeatureRequest = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,13 +44,21 @@ struct RootView: View {
                     }
                     .help("HelpDesk — message Labern on WhatsApp")
 
-                    Button { openFeatureRequest() } label: {
+                    Button { showFeatureRequest.toggle() } label: {
                         Label("Request feature", systemImage: "lightbulb")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(Theme.accentDeep)
                     }
                     .labelStyle(.titleAndIcon)
                     .help("Request a feature — message Labern on WhatsApp")
+                    .popover(isPresented: $showFeatureRequest, arrowEdge: .bottom) {
+                        FeatureRequestPopover { text in
+                            openWhatsApp("Combray feature request -- " + text)
+                            showFeatureRequest = false
+                        } cancel: {
+                            showFeatureRequest = false
+                        }
+                    }
 
                     Button { withAnimation(.easeInOut(duration: 0.25)) { darkMode.toggle() } } label: {
                         Image(systemName: darkMode ? "sun.max.fill" : "moon.fill")
@@ -96,7 +105,6 @@ struct RootView: View {
     }
 
     private func openHelpDesk() { openWhatsApp("Combray question -- ") }
-    private func openFeatureRequest() { openWhatsApp("Combray feature request -- ") }
 
     /// Opens the WhatsApp Mac app straight to a chat with Labern (the person this app is for),
     /// pre-filled with `text`. UK 07476 897931 → international 447476897931. Falls back to wa.me.
@@ -155,6 +163,43 @@ struct TranscribeSpinner: View {
         }
         .onAppear { spin = true }
         .transition(.opacity.combined(with: .scale))
+    }
+}
+
+/// The small pop-down from the toolbar's "Request feature" button: type a request, then send it to
+/// Labern over WhatsApp.
+struct FeatureRequestPopover: View {
+    let send: (String) -> Void
+    let cancel: () -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Request a feature").font(Theme.title)
+            Text("What would you like Combray to do? This opens WhatsApp to send it to Labern.")
+                .font(Theme.small).foregroundStyle(Theme.faint)
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("Describe the feature…", text: $text, axis: .vertical)
+                .textFieldStyle(.plain).font(Theme.body).lineLimit(3...8)
+                .focused($focused)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surface))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+            HStack {
+                Button { cancel() } label: { Text("Cancel") }
+                    .buttonStyle(BigButtonStyle(filled: false, compact: true))
+                Spacer()
+                Button { send(trimmed) } label: { Label("Request feature", systemImage: "paperplane.fill") }
+                    .buttonStyle(BigButtonStyle(compact: true))
+                    .disabled(trimmed.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
+        .onAppear { focused = true }
     }
 }
 
