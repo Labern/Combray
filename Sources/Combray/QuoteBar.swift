@@ -82,7 +82,7 @@ struct QuoteBar: View {
                 Spacer()
 
                 // bottom-right: version + credit
-                HStack(spacing: 10) {
+                HStack(spacing: 22) {
                     Text("V\(Self.appVersion)")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.faint.opacity(0.65))
