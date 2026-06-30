@@ -80,6 +80,7 @@ struct LetterDetailView: View {
     @State private var draft: String = ""
     @State private var isEditing = false
     @State private var showChat = false
+    @State private var showAsk = false
     @State private var copied = false
     @State private var titleText = ""
     @State private var fromText = ""
@@ -106,6 +107,7 @@ struct LetterDetailView: View {
         .onChange(of: focus) { oldValue, _ in saveField(oldValue) }
         .onChange(of: letter.updatedAt) { _, _ in if focus == nil { syncFields() } }
         .sheet(isPresented: $showChat) { ChatSheet(letterID: letter.id).environmentObject(c) }
+        .sheet(isPresented: $showAsk) { AskSheet().environmentObject(c) }
     }
 
     private func syncFields() {
@@ -265,10 +267,16 @@ struct LetterDetailView: View {
                         .lineSpacing(8)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button { draft = letter.transcription; isEditing = true } label: {
-                        Label("Edit", systemImage: "pencil")
+                    HStack(spacing: 12) {
+                        Button { showAsk = true } label: {
+                            Label("Ask about the transcription", systemImage: "text.bubble")
+                        }
+                        .buttonStyle(BigButtonStyle())
+                        Button { draft = letter.transcription; isEditing = true } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .buttonStyle(BigButtonStyle(filled: false))
                     }
-                    .buttonStyle(BigButtonStyle(filled: false))
                 }
 
                 if let summary = letter.summary {

@@ -305,6 +305,37 @@ final class ArchiveController: ObservableObject {
                 || m.contains("not allowed") || m.contains("upgrade"))
     }
 
+    // MARK: - Ask about the transcription (chat)
+
+    /// Sends the running chat history to the model and returns its reply plus an optional proposed
+    /// revision of the transcription. Uses the selected letter's transcription as context; falls
+    /// back to Sonnet on a plan limit (like transcription). Returns nil + sets errorText on failure.
+    func askAboutTranscription(_ history: [(role: String, text: String)]) async -> AskResult? {
+        guard let letter = selectedLetter else { return nil }
+        guard Keychain.hasCredential() else {
+            errorText = "Sign in to Claude first (or add an API key in Settings)."
+            return nil
+        }
+        do {
+            return try await askWithFallback(transcription: letter.transcription, history: history)
+        } catch {
+            errorText = error.localizedDescription
+            return nil
+        }
+    }
+
+    private func askWithFallback(transcription: String,
+                                 history: [(role: String, text: String)]) async throws -> AskResult {
+        let primary = transcriptionModel.modelID
+        do {
+            return try await client.ask(transcription: transcription, history: history, model: primary)
+        } catch let AnthropicError.http(status, msg)
+                    where transcriptionModel == .auto && primary == "claude-opus-4-8"
+                    && Self.looksLikePlanLimit(status, msg) {
+            return try await client.ask(transcription: transcription, history: history, model: "claude-sonnet-4-6")
+        }
+    }
+
     // MARK: - Account
 
     /// A human description of the connected Claude account (for Settings).

@@ -59,6 +59,172 @@ struct Bubble: View {
     }
 }
 
+// MARK: - Ask about the transcription (AI chat)
+
+/// A single chat window for querying the selected letter's transcription. The user asks questions
+/// ("this part looks wrong — what do you think?"); Claude replies and, when warranted, proposes a
+/// full revised transcription the user can Apply or keep.
+struct AskSheet: View {
+    @EnvironmentObject var c: ArchiveController
+    @Environment(\.dismiss) private var dismiss
+    @State private var turns: [AskTurn] = []
+    @State private var input = ""
+    @State private var sending = false
+    @FocusState private var focused: Bool
+
+    struct AskTurn: Identifiable {
+        let id = UUID()
+        let role: String            // "user" | "assistant"
+        var text: String
+        var suggestion: String?
+        var applied = false
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Ask about the transcription").font(Theme.title)
+                    Text("Point at anything that looks wrong — Claude can suggest a fix.")
+                        .font(Theme.small).foregroundStyle(Theme.faint)
+                }
+                Spacer()
+                Button("Done") { dismiss() }.buttonStyle(BigButtonStyle(filled: false))
+            }.padding(Theme.pad)
+            Divider()
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if turns.isEmpty { emptyState }
+                        ForEach(turns) { turn in askBubble(turn).id(turn.id) }
+                        if sending {
+                            HStack(spacing: 10) {
+                                ProgressView().controlSize(.small)
+                                Text("Claude is reading…").font(Theme.small).foregroundStyle(Theme.faint)
+                            }.id("typing")
+                        }
+                    }
+                    .padding(Theme.pad).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .onChange(of: turns.count) { _, _ in withAnimation { proxy.scrollTo(turns.last?.id, anchor: .bottom) } }
+                .onChange(of: sending) { _, s in if s { withAnimation { proxy.scrollTo("typing", anchor: .bottom) } } }
+            }
+
+            Divider()
+            inputBar
+        }
+        .frame(minWidth: 640, minHeight: 580)
+        .background(Theme.bg)
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("For example:").font(Theme.label).foregroundStyle(Theme.faint)
+            ForEach(["The third line looks wrong — what do you think it says?",
+                     "Does the closing make sense as transcribed?",
+                     "Fix any obvious misreadings you can spot."], id: \.self) { ex in
+                Button { input = ex; focused = true } label: {
+                    Text("\u{201C}\(ex)\u{201D}").font(Theme.body).foregroundStyle(Theme.accentDeep)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(TapStyle(scale: 0.99))
+            }
+        }
+        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.surface))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line))
+    }
+
+    @ViewBuilder private func askBubble(_ turn: AskTurn) -> some View {
+        let mine = turn.role == "user"
+        HStack {
+            if mine { Spacer(minLength: 60) }
+            VStack(alignment: .leading, spacing: 12) {
+                Text(turn.text).font(Theme.body).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let suggestion = turn.suggestion { suggestionCard(turn, suggestion) }
+            }
+            .padding(16).frame(maxWidth: 520, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 16).fill(mine ? Theme.accent.opacity(0.16) : Theme.surface))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line))
+            if !mine { Spacer(minLength: 60) }
+        }
+    }
+
+    @ViewBuilder private func suggestionCard(_ turn: AskTurn, _ suggestion: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Proposed correction", systemImage: "wand.and.stars")
+                .font(Theme.label).foregroundStyle(Theme.accentDeep)
+            Text(suggestion).font(.system(size: 16)).lineSpacing(5).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Theme.bg))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
+            if turn.applied {
+                Label("Applied to the transcription", systemImage: "checkmark.circle.fill")
+                    .font(Theme.small).foregroundStyle(Theme.accentDeep)
+            } else {
+                HStack(spacing: 10) {
+                    Button { apply(turn, suggestion) } label: { Label("Apply", systemImage: "checkmark") }
+                        .buttonStyle(BigButtonStyle(compact: true))
+                    Button { dismissSuggestion(turn) } label: { Text("Keep as is") }
+                        .buttonStyle(BigButtonStyle(filled: false, compact: true))
+                }
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.accent.opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.accent.opacity(0.35)))
+    }
+
+    private var inputBar: some View {
+        HStack(spacing: 12) {
+            TextField("Ask a question about this transcription…", text: $input, axis: .vertical)
+                .textFieldStyle(.plain).font(Theme.body).lineLimit(1...5)
+                .focused($focused).onSubmit(send)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surface))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+            Button(action: send) {
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 30))
+                    .foregroundStyle(canSend ? Theme.accent : Theme.faint)
+            }
+            .buttonStyle(TapStyle()).disabled(!canSend)
+        }
+        .padding(Theme.pad)
+    }
+
+    private var canSend: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sending }
+
+    private func send() {
+        let q = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, !sending else { return }
+        turns.append(AskTurn(role: "user", text: q, suggestion: nil))
+        input = ""
+        sending = true
+        let history = turns.map { (role: $0.role, text: $0.text) }
+        Task {
+            let result = await c.askAboutTranscription(history)
+            await MainActor.run {
+                sending = false
+                if let result {
+                    turns.append(AskTurn(role: "assistant", text: result.reply, suggestion: result.suggestion))
+                }
+            }
+        }
+    }
+
+    private func apply(_ turn: AskTurn, _ suggestion: String) {
+        c.saveTranscription(suggestion)
+        if let i = turns.firstIndex(where: { $0.id == turn.id }) { turns[i].applied = true }
+    }
+
+    private func dismissSuggestion(_ turn: AskTurn) {
+        if let i = turns.firstIndex(where: { $0.id == turn.id }) { turns[i].suggestion = nil }
+    }
+}
+
 // MARK: - Person detail (author view)
 
 struct PersonDetailView: View {

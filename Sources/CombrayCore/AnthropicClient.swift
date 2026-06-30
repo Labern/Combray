@@ -82,6 +82,22 @@ public struct TranscriptionResult: Decodable, Sendable, Hashable {
     }
 }
 
+/// One assistant turn when chatting *about* a transcription: a conversational `reply`, plus an
+/// optional `suggestion` — a full proposed revision of the transcription the user can accept or not.
+public struct AskResult: Decodable, Sendable, Hashable {
+    public var reply = ""
+    /// A complete proposed revised transcription, or nil when the model isn't suggesting a change.
+    public var suggestion: String?
+    public init(reply: String = "", suggestion: String? = nil) { self.reply = reply; self.suggestion = suggestion }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        reply = (try? c.decode(String.self, forKey: .reply)) ?? ""
+        let s = (try? c.decode(String.self, forKey: .suggestion)) ?? ""
+        suggestion = s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : s
+    }
+    enum CodingKeys: String, CodingKey { case reply, suggestion }
+}
+
 public enum AnthropicError: LocalizedError {
     case missingAPIKey
     case http(Int, String)
@@ -174,6 +190,94 @@ public struct AnthropicClient: Sendable {
             throw AnthropicError.http(200, "Couldn't read the transcription. The model returned:\n\(text.prefix(600))")
         }
     }
+
+    /// Chats *about* an existing transcription. `history` is the full back-and-forth so far (each
+    /// `(role: "user"|"assistant", text:)`), ending with the user's latest question. Returns the
+    /// model's conversational reply plus an optional full proposed revision of the transcription.
+    public func ask(transcription: String, history: [(role: String, text: String)],
+                    model overrideModel: String? = nil) async throws -> AskResult {
+        let model = overrideModel ?? self.model
+        let headers = try await Self.authHeaders()
+
+        var systemBlocks: [[String: Any]] = []
+        if Keychain.credential()?.kind == .oauth {
+            systemBlocks.append(["type": "text",
+                                 "text": "You are Claude Code, Anthropic's official CLI for Claude."])
+        }
+        systemBlocks.append(["type": "text", "text": Self.askInstruction(transcription)])
+
+        let messages = history.map { turn in
+            ["role": turn.role, "content": [["type": "text", "text": turn.text]]] as [String: Any]
+        }
+
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 8000,
+            "output_config": ["format": ["type": "json_schema", "schema": Self.askSchema]],
+            "system": systemBlocks,
+            "messages": messages
+        ]
+
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        request.httpMethod = "POST"
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 180
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw AnthropicError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        guard
+            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let blocks = root["content"] as? [[String: Any]],
+            let text = blocks.first(where: { $0["type"] as? String == "text" })?["text"] as? String
+        else { throw AnthropicError.noContent }
+
+        let json = Self.extractJSON(text)
+        guard let jsonData = json.data(using: .utf8) else { throw AnthropicError.noContent }
+        do {
+            return try JSONDecoder().decode(AskResult.self, from: jsonData)
+        } catch {
+            // Fall back to treating the whole reply as plain conversational text.
+            return AskResult(reply: text, suggestion: nil)
+        }
+    }
+
+    static func askInstruction(_ transcription: String) -> String {
+        """
+        You are helping the user review and proofread the transcription of a handwritten or \
+        photographed document. Here is the CURRENT transcription, between the markers:
+
+        <<<TRANSCRIPTION
+        \(transcription)
+        TRANSCRIPTION>>>
+
+        The user will ask questions about it — often pointing at a passage that looks wrong and \
+        asking what you think. Answer helpfully, specifically, and concisely about THIS text. You \
+        cannot see the original photo, so reason from spelling, grammar, sense, and context, and be \
+        honest about uncertainty.
+
+        When — and only when — you are confident a concrete correction would improve the \
+        transcription, put the ENTIRE corrected transcription (the full text, with your change \
+        applied and everything else preserved exactly) in "suggestion". If you are only discussing, \
+        speculating, or no change is warranted, set "suggestion" to an empty string. Always put your \
+        conversational answer in "reply". Respond with ONLY the JSON object.
+        """
+    }
+
+    static var askSchema: [String: Any] { [
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reply", "suggestion"],
+        "properties": [
+            "reply": ["type": "string"],
+            "suggestion": ["type": "string"]
+        ]
+    ] }
 
     /// Resolves auth headers from the stored credential (refreshing an expired OAuth token).
     static func authHeaders() async throws -> [String: String] {
