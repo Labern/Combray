@@ -529,11 +529,23 @@ folders. Settings (`ownerName`, `ownerProfile`, etc.) live in UserDefaults, not 
   bg-isolation guard); changes are merged/cherry-picked to `main` in `~/Combray` for release.
   `.claude/` is gitignored. We are now in **shipping** mode (fast-iteration's release pause is over).
 
-### Versioning policy (updated 2026-06-30, supersedes the note above)
-**Semantic versioning from `0.11.1` onward** (user's call). I choose the bump: **`0.x.y` (patch)** for
-small fixes/tweaks, **`0.x.0` (minor)** for features. Tag = `vX.Y.Z`, in-app
-`CFBundleShortVersionString` = the same, shown in the footer. The legacy tags `v0.1…v0.10` were the
-old non-semver scheme (where `0.10 > 0.9`); don't reuse those numbers. Current latest: **v0.11.1**.
+### Versioning framework (updated 2026-06-30, supersedes the notes above)
+**Semantic versioning, `0.MINOR.PATCH`** (pre-1.0). I choose the bump with this decidable rule:
+
+- **MINOR (`0.x.0`)** — the release does something *new* the user can point to: a new feature or
+  capability (auto-updater, chat, find-a-letter, .docx export), a data/storage-format change or DB
+  migration, or a behaviour change big enough to *headline*. Rule of thumb: **if you'd announce it
+  ("Combray now does X"), it's a minor.**
+- **PATCH (`0.x.y`)** — the release only improves what's already there: bug/crash fixes, visual/copy/
+  layout tweaks (e.g. making the update card bigger), performance, refactors, dependency bumps. Rule
+  of thumb: **if it's "same app, just better/fixed," it's a patch.**
+- **Tie-breaker:** can you write a "what's new" line that introduces a *new thing the user can do*?
+  → minor. Otherwise → patch. **Fixes bundled with a feature ride along under the feature's minor.**
+
+Tag = `vX.Y.Z`, in-app `CFBundleShortVersionString` = the same, shown in the footer. The legacy tags
+`v0.1…v0.10` were the old non-semver scheme (where `0.10 > 0.9`); don't reuse those numbers.
+**Current latest: `v0.12.0`** (in-app auto-updater — a feature, hence the minor bump; verified
+self-updating a live v0.11.1 install end-to-end).
 
 ---
 
