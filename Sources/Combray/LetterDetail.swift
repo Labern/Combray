@@ -409,6 +409,8 @@ struct MetaPanel: View {
                 metaRow("Likely relationship", letter.metaRelationship)
                 metaRow("State of the relationship", letter.metaRelationshipState)
                 metaRow("Writer's goals", letter.metaWriterGoals)
+                metaRow("Handwriting — likely sex & age", letter.metaHandwriting)
+                metaRow("Suspected writer", letter.metaSuspectedWriter)
             }
             .padding(.top, 10)
         } label: {

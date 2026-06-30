@@ -19,6 +19,10 @@ public struct LetterFile: Codable, Sendable {
         public var relationship: String?
         public var relationshipState: String?
         public var writerGoals: String?
+        /// Handwriting-based guess at the writer's sex/age — optional/additive, absent in old records.
+        public var handwriting: String?
+        /// Suspected writer from handwriting match — optional/additive, absent in old records.
+        public var suspectedWriter: String?
     }
 
     public var number: Int

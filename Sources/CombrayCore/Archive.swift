@@ -279,6 +279,8 @@ public struct Archive: Sendable {
         letter.metaRelationship = Self.clean(r.meta.relationship)
         letter.metaRelationshipState = Self.clean(r.meta.relationship_state)
         letter.metaWriterGoals = Self.clean(r.meta.writer_goals)
+        letter.metaHandwriting = Self.clean(r.meta.handwriting_profile)
+        letter.metaSuspectedWriter = Self.clean(r.meta.suspected_writer)
         letter.notableQuotes = r.notable_quotes.isEmpty ? nil : r.notable_quotes.joined(separator: "\n")
         let saved = try save(letter)
         try setParticipants(letterId: letterId,
@@ -339,7 +341,9 @@ public struct Archive: Sendable {
             meta: .init(location: letter.metaLocation,
                         relationship: letter.metaRelationship,
                         relationshipState: letter.metaRelationshipState,
-                        writerGoals: letter.metaWriterGoals),
+                        writerGoals: letter.metaWriterGoals,
+                        handwriting: letter.metaHandwriting,
+                        suspectedWriter: letter.metaSuspectedWriter),
             transcription: letter.transcription,
             aiTranscription: letter.aiTranscription,
             pages: pageNames,
@@ -368,6 +372,7 @@ public struct Archive: Sendable {
                 summary: f.summary, documentType: f.documentType,
                 metaLocation: f.meta.location, metaRelationship: f.meta.relationship,
                 metaRelationshipState: f.meta.relationshipState, metaWriterGoals: f.meta.writerGoals,
+                metaHandwriting: f.meta.handwriting, metaSuspectedWriter: f.meta.suspectedWriter,
                 notableQuotes: (f.notableQuotes?.isEmpty ?? true) ? nil : f.notableQuotes?.joined(separator: "\n"),
                 pinned: f.pinned ?? false,
                 createdAt: f.createdAt, updatedAt: f.updatedAt)

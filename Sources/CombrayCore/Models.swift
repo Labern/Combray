@@ -103,6 +103,10 @@ public struct Letter: Codable, Identifiable, Hashable, Sendable {
     public var metaRelationship: String?
     public var metaRelationshipState: String?
     public var metaWriterGoals: String?
+    /// Guess at the writer's sex/age from handwriting style (meta). Optional & additive.
+    public var metaHandwriting: String?
+    /// Suspected writer when the handwriting matches a known reference (meta). Optional & additive.
+    public var metaSuspectedWriter: String?
     /// Notable verbatim quotes, newline-separated.
     public var notableQuotes: String?
     /// Pinned to the top of the sidebar (at most 3 across the whole archive).
@@ -126,6 +130,8 @@ public struct Letter: Codable, Identifiable, Hashable, Sendable {
                 metaRelationship: String? = nil,
                 metaRelationshipState: String? = nil,
                 metaWriterGoals: String? = nil,
+                metaHandwriting: String? = nil,
+                metaSuspectedWriter: String? = nil,
                 notableQuotes: String? = nil,
                 pinned: Bool = false,
                 createdAt: Date = Date(),
@@ -146,6 +152,8 @@ public struct Letter: Codable, Identifiable, Hashable, Sendable {
         self.metaRelationship = metaRelationship
         self.metaRelationshipState = metaRelationshipState
         self.metaWriterGoals = metaWriterGoals
+        self.metaHandwriting = metaHandwriting
+        self.metaSuspectedWriter = metaSuspectedWriter
         self.notableQuotes = notableQuotes
         self.pinned = pinned
         self.createdAt = createdAt

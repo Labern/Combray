@@ -109,6 +109,15 @@ public final class AppDatabase: Sendable {
             }
         }
 
+        // Additive: handwriting-based guesses (writer sex/age, suspected writer). Nullable; rebuilt
+        // from letter.json like every other column.
+        migrator.registerMigration("v3-handwritingMeta") { db in
+            try db.alter(table: "letter") { t in
+                t.add(column: "metaHandwriting", .text)
+                t.add(column: "metaSuspectedWriter", .text)
+            }
+        }
+
         return migrator
     }
 }
