@@ -67,6 +67,7 @@ struct RootView: View {
         .onAppear { installMadeleineDockIcon() }
         .sheet(isPresented: $c.showAddChoice) { AddLetterSheet().environmentObject(c) }
         .sheet(isPresented: $c.showReplaceChoice) { ReplaceChoiceSheet().environmentObject(c) }
+        .sheet(isPresented: $c.showAddPageChoice) { AddPageChoiceSheet().environmentObject(c) }
         .sheet(isPresented: $c.showCapture) { CaptureSheet().environmentObject(c) }
         .sheet(isPresented: $c.showSignIn) { SignInSheet().environmentObject(c) }
         .sheet(isPresented: $c.showSettings) { SettingsSheet().environmentObject(c) }

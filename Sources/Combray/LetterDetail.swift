@@ -211,7 +211,7 @@ struct LetterDetailView: View {
     /// The dashed "＋ Add page" button under the last page — appends new photos to this letter.
     /// Also accepts dropped image files for the same effect.
     private var addPageButton: some View {
-        Button { c.addPagesWithPicker() } label: {
+        Button { c.beginAddPage() } label: {
             Label(c.pages.isEmpty ? "Add a page" : "Add page", systemImage: "plus")
                 .font(Theme.label)
                 .foregroundStyle(Theme.accentDeep)

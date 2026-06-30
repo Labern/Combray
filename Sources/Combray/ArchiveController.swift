@@ -85,6 +85,14 @@ final class ArchiveController: ObservableObject {
     // iPhone capture
     @Published var captureURL: String?
     @Published var showCapture = false
+    /// True once a phone has opened the capture page — drives "Waiting for images on iPhone…".
+    @Published var captureConnected = false
+    /// True once images have been uploaded — drives "Images sent!" and the auto-close.
+    @Published var captureSent = false
+    /// When set, an iPhone capture appends its pages to this letter instead of making a new one.
+    var addPagesTarget: String?
+    /// Shows the "Add a page" chooser (iPhone · Mac · drag).
+    @Published var showAddPageChoice = false
 
     // Sign in with Claude
     @Published var showSignIn = false
@@ -111,14 +119,19 @@ final class ArchiveController: ObservableObject {
         reload()
 
         capture.onURL = { [weak self] url in Task { @MainActor in self?.captureURL = url } }
+        capture.onConnect = { [weak self] in Task { @MainActor in self?.captureConnected = true } }
         capture.onLetter = { [weak self] batch, urls in
             Task { @MainActor in
                 guard let self else { return }
-                if self.replaceTarget != nil {                 // an iPhone "Replace this page" upload
+                self.captureSent = true                 // "Images sent!"
+                self.scheduleCaptureClose()             // …then close the sheet after 3 seconds
+                self.capture.setStatus(batch, urls.isEmpty ? "error" : "received")
+                if self.replaceTarget != nil {                      // Replace this page
                     self.replaceTargetPage(with: urls)
-                    self.capture.setStatus(batch, urls.isEmpty ? "error" : "done")
-                    self.stopCapture()
-                } else {
+                } else if let target = self.addPagesTarget {        // Add page(s) to this letter
+                    self.addPagesTarget = nil
+                    self.addPages(from: urls, toLetterId: target)
+                } else {                                            // a brand-new letter
                     await self.importFromCapture(batch: batch, urls: urls)
                 }
             }
@@ -432,8 +445,8 @@ final class ArchiveController: ObservableObject {
     /// Appends new page images to the END of the selected letter (the "＋ Add page" button / drop).
     /// Imported losslessly; indices stay contiguous; the folder backup is rewritten so the change is
     /// durable and every prior app version still opens the exact same archive (no schema change).
-    func addPages(from urls: [URL]) {
-        guard let id = selectedLetterID,
+    func addPages(from urls: [URL], toLetterId: String? = nil) {
+        guard let id = toLetterId ?? selectedLetterID,
               let letter = letters.first(where: { $0.id == id }) else { return }
         let n = letter.number
         var pages = (try? archive.pages(forLetterId: id)) ?? []
@@ -458,6 +471,37 @@ final class ArchiveController: ObservableObject {
         panel.message = "Choose photo(s) to add as new pages of this letter, in order."
         if panel.runModal() == .OK, !panel.urls.isEmpty { addPages(from: panel.urls) }
     }
+
+    // MARK: - Add a page (iPhone · Mac · drag)
+
+    /// Opens the "Add a page" chooser for the selected letter.
+    func beginAddPage() { showAddPageChoice = true }
+
+    /// Chooser → "Take a photo with iPhone": the upload appends to the current letter (routed in
+    /// `capture.onLetter`). The short delay lets the chooser dismiss before the capture sheet shows.
+    func beginAddPageCapture() {
+        addPagesTarget = selectedLetterID
+        showAddPageChoice = false
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            startCapture()
+        }
+    }
+
+    /// Chooser → "Choose a photo from this Mac".
+    func addPagesWithPickerFromChooser() {
+        showAddPageChoice = false
+        addPagesWithPicker()
+    }
+
+    /// Chooser → dropped image files.
+    func addPagesFromChooser(_ urls: [URL]) {
+        showAddPageChoice = false
+        addPages(from: urls)
+    }
+
+    /// Cancels the "Add a page" chooser, changing nothing.
+    func cancelAddPage() { showAddPageChoice = false }
 
     /// Lowest page index ≥ `start` whose `letter_<n>_page_<i+1>.*` filename is free on disk, so an
     /// appended page can never clobber a file left behind by an earlier delete or replace.
@@ -675,10 +719,22 @@ final class ArchiveController: ObservableObject {
         }
     }
 
-    func startCapture() { captureURL = nil; capture.start(); showCapture = true }
-    /// Closes the capture sheet. Also clears any pending replace target, so cancelling a
-    /// "Replace via iPhone" can't leak into the next "Add a Letter" capture.
-    func stopCapture() { capture.stop(); showCapture = false; replaceTarget = nil }
+    func startCapture() {
+        captureURL = nil; captureConnected = false; captureSent = false
+        capture.start(); showCapture = true
+    }
+    /// Closes the capture sheet. Also clears any pending replace/add target, so a cancelled
+    /// "Replace via iPhone" / "Add page via iPhone" can't leak into the next capture.
+    func stopCapture() {
+        capture.stop(); showCapture = false; replaceTarget = nil; addPagesTarget = nil
+    }
+    /// After images arrive, leave "Images sent!" on screen briefly, then close the sheet.
+    private func scheduleCaptureClose() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self, self.captureSent else { return }
+            self.stopCapture()
+        }
+    }
 
     /// Imports a captured batch and reports progress back to the phone via the capture server.
     func importFromCapture(batch: String, urls: [URL]) async {

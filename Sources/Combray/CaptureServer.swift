@@ -14,6 +14,9 @@ final class CaptureServer: @unchecked Sendable {
 
     /// Called (off the main actor) when the server URL becomes available or goes away.
     var onURL: (@Sendable (String?) -> Void)?
+    /// Called (off the main actor) when a phone first opens the capture page (so the Mac can say
+    /// "waiting for images…").
+    var onConnect: (@Sendable () -> Void)?
     /// Called (off the main actor) with a finished batch's id and uploaded image files.
     var onLetter: (@Sendable (String, [URL]) -> Void)?
 
@@ -91,6 +94,7 @@ final class CaptureServer: @unchecked Sendable {
         let q = LocalHTTP.query(path)
 
         if method == "GET", path == "/" || path.hasPrefix("/?") {
+            onConnect?()    // the phone opened the capture page
             LocalHTTP.respond(conn, "200 OK", "text/html; charset=utf-8", Data(Self.html.utf8))
         } else if method == "POST", path.hasPrefix("/upload") {
             let batch = q["b"] ?? "default"

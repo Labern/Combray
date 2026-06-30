@@ -110,28 +110,89 @@ struct CaptureSheet: View {
     var body: some View {
         VStack(spacing: 20) {
             Text("Add from iPhone").font(Theme.title)
-            Text("On your iPhone, point the Camera at this code (or open the address in Safari). Your phone must be on the same Wi‑Fi as this Mac.")
-                .font(Theme.body).foregroundStyle(Theme.faint)
-                .multilineTextAlignment(.center).frame(maxWidth: 440)
 
-            if let url = c.captureURL {
-                if let qr = qrImage(from: url) {
-                    qr.interpolation(.none).resizable()
-                        .frame(width: 230, height: 230)
-                        .padding(10)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(.white))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
-                }
-                Text(url).font(.system(size: 18, weight: .semibold)).textSelection(.enabled)
-            } else {
+            if c.captureSent {
+                // 3 · the phone has uploaded — confirm, then the sheet auto-closes after 3s.
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 66)).foregroundStyle(Theme.accent)
+                Text("Images sent!").font(Theme.title)
+                Text("Adding them to your archive…").font(Theme.body).foregroundStyle(Theme.faint)
+            } else if c.captureConnected {
+                // 2 · the phone has opened the page — waiting for the photos.
                 ProgressView().controlSize(.large)
-                Text("Starting the connection…").font(Theme.body).foregroundStyle(Theme.faint)
+                Text("Waiting for images on iPhone…").font(Theme.big)
+                Text("Take the photos on your phone, then tap \u{201C}Send to Mac\u{201D}.")
+                    .font(Theme.body).foregroundStyle(Theme.faint)
+                    .multilineTextAlignment(.center).frame(maxWidth: 440)
+            } else {
+                // 1 · show the QR / address for the phone to open.
+                Text("On your iPhone, point the Camera at this code (or open the address in Safari). Your phone must be on the same Wi‑Fi as this Mac.")
+                    .font(Theme.body).foregroundStyle(Theme.faint)
+                    .multilineTextAlignment(.center).frame(maxWidth: 440)
+                if let url = c.captureURL {
+                    if let qr = qrImage(from: url) {
+                        qr.interpolation(.none).resizable()
+                            .frame(width: 230, height: 230)
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+                    }
+                    Text(url).font(.system(size: 18, weight: .semibold)).textSelection(.enabled)
+                } else {
+                    ProgressView().controlSize(.large)
+                    Text("Starting the connection…").font(Theme.body).foregroundStyle(Theme.faint)
+                }
             }
 
-            Button { c.stopCapture() } label: { Text("Done") }.buttonStyle(BigButtonStyle())
+            Button { c.stopCapture() } label: { Text(c.captureSent ? "Close" : "Cancel") }
+                .buttonStyle(BigButtonStyle())
         }
         .padding(36)
         .frame(minWidth: 480, minHeight: 540)
+        .animation(.easeInOut(duration: 0.25), value: c.captureConnected)
+        .animation(.easeInOut(duration: 0.25), value: c.captureSent)
+    }
+}
+
+// MARK: - Add a page (iPhone · Mac · drag)
+
+/// Shown when the user taps "Add page": add another page to the current letter via the iPhone,
+/// a file on this Mac, or by dragging one in.
+struct AddPageChoiceSheet: View {
+    @EnvironmentObject var c: ArchiveController
+    @State private var dropping = false
+    var body: some View {
+        VStack(spacing: 18) {
+            Text("Add a page").font(Theme.title)
+            Text("Add another page to this letter — photograph it with your iPhone, choose a file, or drag one in.")
+                .font(Theme.body).foregroundStyle(Theme.faint)
+                .multilineTextAlignment(.center).frame(maxWidth: 420)
+            Button { c.beginAddPageCapture() } label: {
+                Label("Take a photo with iPhone", systemImage: "iphone")
+            }
+            .buttonStyle(BigButtonStyle(fullWidth: true))
+            Button { c.addPagesWithPickerFromChooser() } label: {
+                Label("Choose a photo from this Mac", systemImage: "photo.on.rectangle")
+            }
+            .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(dropping ? Theme.accent.opacity(0.10) : Color.clear)
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(dropping ? Theme.accent : Theme.line, style: StrokeStyle(lineWidth: 2, dash: [8]))
+                Label("…or drag a photo here", systemImage: "arrow.down.doc")
+                    .font(Theme.body).foregroundStyle(Theme.faint)
+            }
+            .frame(maxWidth: .infinity).frame(height: 96)
+            .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
+                loadDroppedURLs(providers) { urls in if !urls.isEmpty { c.addPagesFromChooser(urls) } }
+                return true
+            }
+
+            Button { c.cancelAddPage() } label: { Text("Cancel") }
+                .buttonStyle(BigButtonStyle(filled: false))
+        }
+        .padding(34).frame(minWidth: 480, minHeight: 470)
     }
 }
 
