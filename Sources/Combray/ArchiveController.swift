@@ -782,10 +782,15 @@ final class ArchiveController: ObservableObject {
         panel.allowedContentTypes = [UTType(filenameExtension: "docx") ?? .data]
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
+        // Mirror how it reads in the app: letters/written docs in a beautiful serif, reflowed into
+        // paragraphs; screenshots / code verbatim in a monospaced face.
+        let layoutSignificant = TextReflow.isLayoutSignificant(letter.documentType)
+
         let doc = NSMutableAttributedString()
         if let title = letter.title {
-            doc.append(NSAttributedString(string: title + "\n",
-                attributes: [.font: NSFont.boldSystemFont(ofSize: 18)]))
+            let titleFont = layoutSignificant ? NSFont.boldSystemFont(ofSize: 17)
+                                              : Self.exportSerif(20, bold: true)
+            doc.append(NSAttributedString(string: title + "\n", attributes: [.font: titleFont]))
         }
         var meta: [String] = []
         if let sender { meta.append("From: \(sender)") }
@@ -795,8 +800,17 @@ final class ArchiveController: ObservableObject {
             doc.append(NSAttributedString(string: meta.joined(separator: "\n") + "\n\n",
                 attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.secondaryLabelColor]))
         }
-        doc.append(NSAttributedString(string: letter.transcription,
-            attributes: [.font: NSFont.systemFont(ofSize: 13)]))
+
+        let bodyText = layoutSignificant
+            ? letter.transcription
+            : TextReflow.paragraphs(letter.transcription).joined(separator: "\n\n")
+        let bodyFont = layoutSignificant
+            ? (NSFont(name: "Menlo", size: 12) ?? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular))
+            : Self.exportSerif(14, bold: false)
+        let bodyStyle = NSMutableParagraphStyle()
+        if !layoutSignificant { bodyStyle.lineSpacing = 4; bodyStyle.paragraphSpacing = 9 }
+        doc.append(NSAttributedString(string: bodyText,
+            attributes: [.font: bodyFont, .paragraphStyle: bodyStyle]))
 
         do {
             let data = try doc.data(
@@ -831,6 +845,12 @@ final class ArchiveController: ObservableObject {
         NSWorkspace.shared.open([url], withApplicationAt: chrome, configuration: config) { _, error in
             if error != nil { NSWorkspace.shared.open(url) }  // fall back to default browser
         }
+    }
+
+    /// Hoefler Text (the on-screen letter face) for .docx export — bold optional, system fallback.
+    static func exportSerif(_ size: CGFloat, bold: Bool) -> NSFont {
+        let base = NSFont(name: "Hoefler Text", size: size) ?? NSFont.systemFont(ofSize: size)
+        return bold ? NSFontManager.shared.convert(base, toHaveTrait: .boldFontMask) : base
     }
 
     static func safeFilename(_ s: String) -> String {

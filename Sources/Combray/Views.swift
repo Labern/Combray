@@ -29,13 +29,6 @@ struct RootView: View {
             }
             .overlay(alignment: .bottom) { statusBar }
             .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    Button { c.goHome() } label: {
-                        Text("Combray").font(Theme.serif(18, .bold)).foregroundStyle(Theme.ink)
-                    }
-                    .buttonStyle(TapStyle(scale: 0.95))
-                    .help("Home — back to the main page")
-                }
                 ToolbarItemGroup(placement: .primaryAction) {
                     if c.isTranscribing {
                         TranscribeSpinner()

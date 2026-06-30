@@ -52,7 +52,8 @@ public enum TextReflow {
     public static func isLayoutSignificant(_ documentType: String?) -> Bool {
         guard let t = documentType?.lowercased() else { return false }
         let markers = ["screenshot", "screen shot", "screengrab", "screen grab", "screen capture",
-                       "code", "terminal", "console", "spreadsheet"]
+                       "code", "terminal", "console", "command line", "cli", "shell", "log",
+                       "spreadsheet"]
         return markers.contains { t.contains($0) }
     }
 }
