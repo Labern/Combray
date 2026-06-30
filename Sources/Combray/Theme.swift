@@ -20,6 +20,8 @@ enum Theme {
 
     /// The ink colour as a (dark-mode-aware) `NSColor`, for AppKit views like the justified text view.
     static let inkNS = dynNS(light: (0.12, 0.11, 0.10), dark: (0.928, 0.908, 0.860))
+    /// The gold accent as an `NSColor` — used to highlight the word being read aloud.
+    static let accentNS = dynNS(light: (0.84, 0.68, 0.24), dark: (0.905, 0.745, 0.305))
 
     static let bg        = dyn(light: (1.00, 1.00, 1.00),    dark: (0.086, 0.080, 0.067))  // paper / near-black
     static let surface   = dyn(light: (0.975, 0.965, 0.945), dark: (0.145, 0.132, 0.110))  // faint warm panel
@@ -426,8 +428,13 @@ func renderLetterPreviewPNG(to path: String) {
     style.lineSpacing = serif * 0.43
     style.paragraphSpacing = 18
     let body = TextReflow.paragraphs(sample).joined(separator: "\n")
-    let attr = NSAttributedString(string: body, attributes: [
+    let attr = NSMutableAttributedString(string: body, attributes: [
         .font: font, .foregroundColor: NSColor.black, .paragraphStyle: style])
+    // Show the read-aloud word highlight (the same background attribute JustifiedText paints live).
+    let hl = (body as NSString).range(of: "Singapore")
+    if hl.location != NSNotFound {
+        attr.addAttribute(.backgroundColor, value: Theme.accentNS.withAlphaComponent(0.35), range: hl)
+    }
 
     let opts: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
     let textH = ceil(attr.boundingRect(with: NSSize(width: width, height: .greatestFiniteMagnitude),

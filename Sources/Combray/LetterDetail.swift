@@ -91,6 +91,7 @@ struct LetterDetailView: View {
     @State private var dateText = ""
     @State private var paneWidth: CGFloat = 0
     @State private var droppingPage = false
+    @StateObject private var speech = SpeechController()
     @FocusState private var focus: MetaField?
     enum MetaField { case title, from, to, date }
 
@@ -100,13 +101,24 @@ struct LetterDetailView: View {
     /// (Labels shrink-to-fit via BigButtonStyle's minimumScaleFactor so the row stays clean.)
     private var actionsStacked: Bool { paneWidth > 0 && paneWidth < 340 }
 
+    /// The text the reader speaks — flowed for letters (so the read-aloud highlight ranges line up
+    /// with the on-screen view), raw for screenshots/code.
+    private var readableText: String {
+        TextReflow.isLayoutSignificant(documentType: letter.documentType, title: letter.title,
+                                       transcription: letter.transcription)
+            ? letter.transcription : TranscriptionText.flowed(letter.transcription)
+    }
+    private func configureSpeech() { speech.configure(text: readableText, gender: letter.metaHandwriting) }
+
     var body: some View {
         HSplitView {
             pages.frame(minWidth: 220)
             transcript.frame(minWidth: 300)
         }
-        .onAppear(perform: syncFields)
-        .onChange(of: letter.id) { _, _ in isEditing = false; syncFields() }
+        .onAppear { syncFields(); configureSpeech() }
+        .onDisappear { speech.stop() }
+        .onChange(of: letter.id) { _, _ in isEditing = false; syncFields(); configureSpeech() }
+        .onChange(of: letter.transcription) { _, _ in configureSpeech() }
         .onChange(of: focus) { oldValue, _ in saveField(oldValue) }
         .onChange(of: letter.updatedAt) { _, _ in if focus == nil { syncFields() } }
         .sheet(isPresented: $showChat) { ChatSheet(letterID: letter.id).environmentObject(c) }
@@ -267,8 +279,12 @@ struct LetterDetailView: View {
 
                 actions
 
-                HStack {
+                HStack(spacing: 16) {
                     Text("Transcription").font(Theme.label).foregroundStyle(Theme.faint)
+                    if !letter.transcription.isEmpty {
+                        PlaybackBar(controller: speech)
+                            .tip("Read the transcription aloud — play/pause, skip 15s, follow the words.")
+                    }
                     Spacer()
                     if !letter.transcription.isEmpty {
                         Button { c.fullSizeLetter = letter } label: {
@@ -344,7 +360,8 @@ struct LetterDetailView: View {
     @ViewBuilder private var transcriptionView: some View {
         let layoutSignificant = TextReflow.isLayoutSignificant(
             documentType: letter.documentType, title: letter.title, transcription: letter.transcription)
-        TranscriptionText(transcription: letter.transcription, documentType: letter.documentType, title: letter.title)
+        TranscriptionText(transcription: letter.transcription, documentType: letter.documentType, title: letter.title,
+                          highlight: speech.spokenRange)
             .frame(maxWidth: layoutSignificant ? .infinity : 680, alignment: .leading)
     }
 
@@ -476,6 +493,13 @@ struct TranscriptionText: View {
     var serifSize: CGFloat = 21
     var monoSize: CGFloat = 16
     var paragraphSpacing: CGFloat = 18
+    var highlight: NSRange? = nil          // word being read aloud (letter view only)
+
+    /// The flowed text the letter view both displays and reads aloud — keep them identical so the
+    /// read-aloud highlight ranges line up with what's on screen.
+    static func flowed(_ transcription: String) -> String {
+        TextReflow.paragraphs(transcription).joined(separator: "\n")
+    }
 
     var body: some View {
         if TextReflow.isLayoutSignificant(documentType: documentType, title: title, transcription: transcription) {
@@ -485,13 +509,14 @@ struct TranscriptionText: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            // Letters: justified, flowing paragraphs separated by real space (blank lines → \n\n).
+            // Letters: justified, flowing paragraphs separated by real space.
             JustifiedText(
-                text: TextReflow.paragraphs(transcription).joined(separator: "\n"),
+                text: Self.flowed(transcription),
                 font: NSFont(name: "Hoefler Text", size: serifSize) ?? .systemFont(ofSize: serifSize),
                 color: Theme.inkNS,
                 lineSpacing: serifSize * 0.43,
-                paragraphSpacing: paragraphSpacing)
+                paragraphSpacing: paragraphSpacing,
+                highlight: highlight)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

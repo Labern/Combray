@@ -593,6 +593,50 @@ loss (the swap only ever replaces the `.app`).
   feature; only iOS-specific code lives on the branch (small branch, avoids drift). `CombrayCore`
   (models, Archive rebuild, AnthropicClient) ports to iOS as-is.
 
+## v0.12.1 → v0.13.0 — shipped 2026-06-30 (this session)
+
+**v0.12.1 (patch):** justified letter text + clean paragraph spacing; UK dates (DD/MM/YYYY reading
+view, ordinal sidebar); Gmail-share 400 fix; "Page N".
+**v0.12.2 (patch):** the **critical updater fix** (below) + instant button press + "See modern chat
+view (beta)".
+**v0.13.0 (minor):** read-aloud, the "Updated!" bubble, and endearment→name inference.
+
+### Updater bug — root-owned installs (the big one)
+- **Symptom:** "Restart to update" reopened the *old* app. **Cause:** apps installed via `.pkg` or
+  Homebrew are **root-owned** in `/Applications`; the in-place `rm`+`ditto` swap runs as the user and
+  silently fails on root files, so the bundle never changed and the relaunch just reopened it. (My
+  local test passed only because I'd `cp`-installed it user-owned.)
+- **Fix (`Updater.launchInstall`):** the detached script tests `[ -w "$DEST" ]`; **user-writable →
+  seamless swap, no prompt; else (explicit click only) → privileged `installer -pkg … -target /` via
+  `osascript "… with administrator privileges"` (one password).** The quit path NEVER prompts and the
+  writability gate means a root-owned bundle is never half-`rm`'d (verified in a sandbox harness).
+  Downloads BOTH `.zip` (seamless) + `.pkg` (privileged).
+- **Catch-22:** a broken updater can't ship its own fix — users on the broken version must update
+  **once by hand** (`brew upgrade --cask combray` / pkg) to reach 0.12.2; auto-updates work after.
+
+### SwiftUI / AppKit gotchas (this session)
+- **SwiftUI `Text` can't justify** → `JustifiedText` (NSViewRepresentable over `NSTextView`,
+  `NSParagraphStyle.alignment = .justified`). Size it via `layoutManager.usedRect(for:)` in
+  `sizeThatFits`. **`ImageRenderer` cannot snapshot an NSView** (renders a "prohibited" placeholder)
+  → for previews, draw the `NSAttributedString` directly to an `NSImage`.
+- **Justified paragraphs:** join paragraphs with a **single `\n`**, not `\n\n` — `\n\n` adds a literal
+  empty line AND `paragraphSpacing` stacks on top (double gap). Control the gap with `paragraphSpacing`
+  alone (~18pt reads as a clean break).
+- **Read-aloud word highlight** = a `.backgroundColor` attribute on the spoken range in the
+  `NSTextView`'s `textStorage` (set base text only when it changes; just re-paint the bg per word).
+- **AVSpeechSynthesizer:** rate is the **global** `AVSpeechUtteranceDefaultSpeechRate` (not a static);
+  voice gender is the **top-level** `AVSpeechSynthesisVoiceGender` (not nested). **"female" contains
+  "male"** — parse female first or you'll misgender. No seek API → ±15s skip = `stop` + re-`speak`
+  from a word offset; `willSpeakRangeOfSpeechString` drives both the highlight and the position timer
+  (total is estimated from word count ÷ ~165 wpm).
+- **Gmail compose URL** 400s when `?body=` is long → cap the inline body, copy the full text to the
+  clipboard for long letters.
+- **"Updated!" bubble:** detect a just-finished update by comparing a stored `lastLaunchedVersion`
+  (UserDefaults) with the running bundle version on launch; fetch that tag's notes for the "what's
+  new"; auto-hide after 20s.
+- **Screenshot rule:** refresh `docs/screenshot.png` on every **minor (0.x.0)** release, not patches.
+  (The `--render` fallback version string lives in `QuoteBar.appVersion` — bump it with the release.)
+
 ## Reusable lessons for future projects
 Distilled from building Combray — transferable patterns, and gotchas that cost real time so the next
 project doesn't re-pay for them.

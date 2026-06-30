@@ -11,6 +11,7 @@ struct JustifiedText: NSViewRepresentable {
     var color: NSColor
     var lineSpacing: CGFloat
     var paragraphSpacing: CGFloat
+    var highlight: NSRange? = nil          // the word being read aloud, highlighted live
 
     func makeNSView(context: Context) -> NSTextView {
         let tv = NSTextView()
@@ -26,7 +27,14 @@ struct JustifiedText: NSViewRepresentable {
     }
 
     func updateNSView(_ tv: NSTextView, context: Context) {
-        tv.textStorage?.setAttributedString(attributed())
+        // Set the base text only when it actually changes, so per-word highlight updates don't reset
+        // scroll/selection — they just re-paint the background attribute.
+        if tv.string != text { tv.textStorage?.setAttributedString(attributed()) }
+        guard let storage = tv.textStorage else { return }
+        storage.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: storage.length))
+        if let h = highlight, h.location >= 0, h.location + h.length <= storage.length {
+            storage.addAttribute(.backgroundColor, value: Theme.accentNS.withAlphaComponent(0.35), range: h)
+        }
     }
 
     /// Report the height the text needs at the proposed width, so the SwiftUI layout reserves the

@@ -521,6 +521,14 @@ public struct AnthropicClient: Sendable {
     "unknown") with a confidence; and any people mentioned. Use the partial date form you can support: \
     "1962", "1962-03", or "1962-03-04".
 
+    Resolve terms of endearment to who they really are. If a sender or recipient is addressed ONLY by \
+    a pet name, term of endearment, or nickname (e.g. "sweetness", "darling", "my dear boy") rather \
+    than a real name, infer who they actually are from the letter's content and the archive owner \
+    profile, and use that real/canonical name for the sender/recipient field (e.g. a mother addressed \
+    throughout as "sweetness" should be recorded as "Mum"). Keep the original endearment in \
+    people_mentioned so nothing is lost. Only resolve when the letter and context make it reasonably \
+    clear; if you genuinely cannot tell who it is, keep the term exactly as written.
+
     Also pull out a few notable or striking quotes from the letter — verbatim excerpts that capture \
     its voice or its key moments — into notable_quotes (an empty list is fine if none stand out).
 

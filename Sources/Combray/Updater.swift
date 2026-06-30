@@ -22,9 +22,13 @@ final class Updater: ObservableObject {
         case ready(version: String)        // staged and ready — click to restart, or it applies on quit
     }
 
+    /// Shown briefly after the app has just been updated (auto OR manual) — "Updated to Vx.y.z".
+    struct JustUpdated: Equatable { let version: String; var summary: String? }
+
     @Published private(set) var state: State = .idle
     @Published private(set) var releaseSummary: String?   // "what's new" line from the release notes
-    @Published var bubbleHidden = false     // user dismissed the bubble this run (update still applies on quit)
+    @Published var bubbleHidden = false     // user dismissed the "update available" bubble this run
+    @Published var justUpdated: JustUpdated?              // non-nil → show the "Updated!" bubble
 
     private let repo = "Labern/Combray"
     private var timer: Timer?
@@ -42,6 +46,7 @@ final class Updater: ObservableObject {
     /// No-op for un-installed dev builds (`swift run`) so they never nag or try to self-swap.
     func start() {
         guard installedAppURL != nil else { return }
+        detectJustUpdated()
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.applyStagedUpdateOnQuit() } }
@@ -62,6 +67,33 @@ final class Updater: ObservableObject {
         let path = Bundle.main.bundlePath
         return path.hasSuffix(".app") ? URL(fileURLWithPath: path) : nil
     }
+
+    // MARK: "Updated!" note
+
+    private let lastVersionKey = "Combray.lastLaunchedVersion"
+
+    /// On launch, compare the stored last-run version with the running one; if it went UP, the app was
+    /// just updated (by either path) — fetch that version's notes and show the "Updated!" bubble.
+    private func detectJustUpdated() {
+        let defaults = UserDefaults.standard
+        let previous = defaults.string(forKey: lastVersionKey)
+        defaults.set(currentVersion, forKey: lastVersionKey)
+        guard let previous, AppUpdate.isNewer(currentVersion, than: previous) else { return }
+        let version = currentVersion
+        Task {
+            var summary: String?
+            if let url = URL(string: "https://api.github.com/repos/\(repo)/releases/tags/v\(version)"),
+               let (data, _) = try? await URLSession.shared.data(from: url),
+               let release = try? GitHubRelease.decode(data) {
+                summary = release.whatsNew
+            }
+            justUpdated = JustUpdated(version: version, summary: summary)
+            try? await Task.sleep(nanoseconds: 20_000_000_000)        // auto-hide after 20s
+            if justUpdated?.version == version { justUpdated = nil }
+        }
+    }
+
+    func dismissUpdatedNote() { justUpdated = nil }
 
     // MARK: check → download
 

@@ -13,7 +13,9 @@ struct UpdateBubble: View {
 
     var body: some View {
         Group {
-            if !updater.bubbleHidden {
+            if let info = updater.justUpdated {
+                updatedCard(info)                       // just-updated → "Updated!" note (priority)
+            } else if !updater.bubbleHidden {
                 switch updater.state {
                 case .downloading(let v): card(version: v, downloading: true)
                 case .ready(let v):       card(version: v, downloading: false)
@@ -23,6 +25,41 @@ struct UpdateBubble: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: updater.state)
         .animation(.easeInOut(duration: 0.2), value: updater.bubbleHidden)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: updater.justUpdated)
+    }
+
+    /// The post-update confirmation: "Updated to Vx.y.z" + what changed. Dismiss with X (or it
+    /// auto-hides after 20s).
+    @ViewBuilder
+    private func updatedCard(_ info: Updater.JustUpdated) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 11) {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 23, weight: .semibold))
+                    .foregroundStyle(Theme.accentDeep)
+                Text("Updated!").font(.system(size: 20, weight: .bold)).foregroundStyle(Theme.ink)
+                Text("V\(info.version)").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.accentDeep)
+                Spacer(minLength: 6)
+                Button { updater.dismissUpdatedNote() } label: {
+                    Image(systemName: "xmark").font(.system(size: 13, weight: .bold))
+                }
+                .buttonStyle(TapStyle(scale: 0.8))
+                .foregroundStyle(Theme.faint)
+            }
+            Text(info.summary ?? "Combray has been updated to the latest version.")
+                .font(.system(size: 15)).foregroundStyle(Theme.faint)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 18).padding(.horizontal, 22)
+        .frame(width: cardWidth, height: cardHeight, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 18).fill(Theme.surface)
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.accent, lineWidth: 2.5))
+                .shadow(color: Theme.accent.opacity(0.32), radius: 22, y: 7)
+        )
+        .transition(.move(edge: .leading).combined(with: .opacity))
     }
 
     @ViewBuilder
