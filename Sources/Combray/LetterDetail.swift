@@ -155,7 +155,7 @@ struct LetterDetailView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
                                 .contextMenu {
-                                    Button { c.replacePageWithPicker(page) } label: {
+                                    Button { c.beginReplace(page) } label: {
                                         Label("Replace image…", systemImage: "photo.on.rectangle")
                                     }
                                     Button(role: .destructive) { c.pendingDeletePage = page } label: {
@@ -182,7 +182,7 @@ struct LetterDetailView: View {
         HStack(spacing: 16) {
             Text("Page \(number)").foregroundStyle(Theme.faint)
             Spacer()
-            Button { c.replacePageWithPicker(page) } label: {
+            Button { c.beginReplace(page) } label: {
                 Label("Replace", systemImage: "arrow.triangle.2.circlepath")
             }
             .buttonStyle(TapStyle())

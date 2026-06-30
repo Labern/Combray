@@ -112,7 +112,16 @@ final class ArchiveController: ObservableObject {
 
         capture.onURL = { [weak self] url in Task { @MainActor in self?.captureURL = url } }
         capture.onLetter = { [weak self] batch, urls in
-            Task { @MainActor in await self?.importFromCapture(batch: batch, urls: urls) }
+            Task { @MainActor in
+                guard let self else { return }
+                if self.replaceTarget != nil {                 // an iPhone "Replace this page" upload
+                    self.replaceTargetPage(with: urls)
+                    self.capture.setStatus(batch, urls.isEmpty ? "error" : "done")
+                    self.stopCapture()
+                } else {
+                    await self.importFromCapture(batch: batch, urls: urls)
+                }
+            }
         }
     }
 
@@ -430,16 +439,16 @@ final class ArchiveController: ObservableObject {
         return i
     }
 
-    /// Opens a file picker and replaces one page's image with the chosen file (keeping its position).
-    func replacePageWithPicker(_ page: Page) {
+    /// Replaces one page's image with a new file (keeping its position in the letter), rewriting the
+    /// folder backup. Imports to a free filename slot first so it can never clobber another page's
+    /// file, then removes the old image — same source-of-truth model, fully backward-compatible.
+    func replacePage(_ page: Page, with url: URL) {
         guard let letter = letters.first(where: { $0.id == page.letterId }) else { return }
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        try? FileManager.default.removeItem(at: images.url(for: page))
+        let oldFile = images.url(for: page)
+        let slot = freePageIndex(letterNumber: letter.number, startingAt: 0)
         guard let newPage = try? images.importImage(from: url, letterId: page.letterId,
-                                                     letterNumber: letter.number, index: page.pageIndex) else { return }
+                                                     letterNumber: letter.number, index: slot) else { return }
+        if newPage.imagePath != page.imagePath { try? FileManager.default.removeItem(at: oldFile) }
         var pages = (try? archive.pages(forLetterId: page.letterId)) ?? []
         if let i = pages.firstIndex(where: { $0.id == page.id }) {
             pages[i].imagePath = newPage.imagePath
@@ -449,6 +458,62 @@ final class ArchiveController: ObservableObject {
         try? archive.setPages(pages, forLetterId: page.letterId)
         backup(page.letterId)
         if selectedLetterID == page.letterId { loadDetail() }
+    }
+
+    /// Opens a file picker and replaces one page's image with the chosen file.
+    func replacePageWithPicker(_ page: Page) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        replacePage(page, with: url)
+    }
+
+    // MARK: - Replace a page (iPhone · Mac · drag)
+
+    /// The page the "Replace" chooser is currently targeting (nil when not replacing).
+    @Published var replaceTarget: Page?
+    /// Shows the "Replace this page" chooser — iPhone · Mac · drag.
+    @Published var showReplaceChoice = false
+
+    /// Opens the chooser to replace `page` (the page's Replace button / right-click menu).
+    func beginReplace(_ page: Page) {
+        replaceTarget = page
+        showReplaceChoice = true
+    }
+
+    /// Replaces the targeted page with the first of `urls` (a drag-drop or an iPhone upload), then
+    /// dismisses the chooser and clears the target.
+    func replaceTargetPage(with urls: [URL]) {
+        showReplaceChoice = false
+        defer { replaceTarget = nil }
+        guard let page = replaceTarget, let url = urls.first else { return }
+        replacePage(page, with: url)
+    }
+
+    /// Chooser → "Choose a photo from this Mac".
+    func replaceTargetWithPicker() {
+        showReplaceChoice = false
+        guard let page = replaceTarget else { return }
+        replaceTarget = nil
+        replacePageWithPicker(page)
+    }
+
+    /// Chooser → "Take a photo with iPhone": shows the QR capture sheet; the upload replaces the
+    /// target page (routed in `capture.onLetter`). `replaceTarget` stays set until the upload lands.
+    /// The short delay lets the chooser sheet finish dismissing before the capture sheet presents.
+    func beginReplaceCapture() {
+        showReplaceChoice = false
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            startCapture()
+        }
+    }
+
+    /// Cancels the replace chooser, changing nothing.
+    func cancelReplace() {
+        replaceTarget = nil
+        showReplaceChoice = false
     }
 
     // MARK: - Editing
@@ -580,7 +645,9 @@ final class ArchiveController: ObservableObject {
     }
 
     func startCapture() { captureURL = nil; capture.start(); showCapture = true }
-    func stopCapture() { capture.stop(); showCapture = false }
+    /// Closes the capture sheet. Also clears any pending replace target, so cancelling a
+    /// "Replace via iPhone" can't leak into the next "Add a Letter" capture.
+    func stopCapture() { capture.stop(); showCapture = false; replaceTarget = nil }
 
     /// Imports a captured batch and reports progress back to the phone via the capture server.
     func importFromCapture(batch: String, urls: [URL]) async {

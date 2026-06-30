@@ -38,6 +38,49 @@ struct AddLetterSheet: View {
     }
 }
 
+// MARK: - Replace a page (iPhone · Mac · drag)
+
+/// Shown when the user clicks "Replace" on a page: swap in a better photo by taking a fresh one with
+/// the iPhone, choosing a file, or dragging one in. All three route to the same `replaceTarget` page.
+struct ReplaceChoiceSheet: View {
+    @EnvironmentObject var c: ArchiveController
+    @State private var dropping = false
+    var body: some View {
+        VStack(spacing: 18) {
+            Text("Replace this page").font(Theme.title)
+            Text("Swap in a better-quality photo — take a fresh one with your iPhone, choose a file, or drag one in.")
+                .font(Theme.body).foregroundStyle(Theme.faint)
+                .multilineTextAlignment(.center).frame(maxWidth: 420)
+            Button { c.beginReplaceCapture() } label: {
+                Label("Take a photo with iPhone", systemImage: "iphone")
+            }
+            .buttonStyle(BigButtonStyle(fullWidth: true))
+            Button { c.replaceTargetWithPicker() } label: {
+                Label("Choose a photo from this Mac", systemImage: "photo.on.rectangle")
+            }
+            .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(dropping ? Theme.accent.opacity(0.10) : Color.clear)
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(dropping ? Theme.accent : Theme.line, style: StrokeStyle(lineWidth: 2, dash: [8]))
+                Label("…or drag a photo here", systemImage: "arrow.down.doc")
+                    .font(Theme.body).foregroundStyle(Theme.faint)
+            }
+            .frame(maxWidth: .infinity).frame(height: 96)
+            .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
+                loadDroppedURLs(providers) { urls in if !urls.isEmpty { c.replaceTargetPage(with: urls) } }
+                return true
+            }
+
+            Button { c.cancelReplace() } label: { Text("Cancel") }
+                .buttonStyle(BigButtonStyle(filled: false))
+        }
+        .padding(34).frame(minWidth: 480, minHeight: 470)
+    }
+}
+
 // MARK: - Sign in with Claude
 
 struct SignInSheet: View {
