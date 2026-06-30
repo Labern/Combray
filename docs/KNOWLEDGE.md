@@ -549,6 +549,50 @@ self-updating a live v0.11.1 install end-to-end).
 
 ---
 
+## v0.12.0 — shipped 2026-06-30 (in-app auto-updater)
+
+**Feature:** Combray updates itself (full mechanism in "### Auto-updater (v0.12.0+)" above): checks
+the latest GitHub **release tag** on launch + every 20 min, shows a big **fixed-size** (440×168)
+"Restart to update" card bottom-left with a one-line "what's new" pulled from the release notes
+(`GitHubRelease.whatsNew`), downloads `Combray.zip`, and swaps `/Applications/Combray.app` on click
+or on quit. **Verified end-to-end** self-updating a live v0.11.1 install → v0.12.0 with zero data
+loss (the swap only ever replaces the `.app`).
+
+### How a `.pkg` overwrite actually works (asked this session)
+- A flat component `.pkg` = payload (cpio of `Applications/App.app`) + BOM + a receipt keyed by the
+  bundle id. Installing over an existing version is a **receipt-aware file-level merge**: new files
+  overwrite, and files the *old* receipt listed but the new payload lacks are **pruned** → the bundle
+  ends up matching the new payload (a clean in-place replace, not a wipe-and-copy; no "uninstall").
+- **It never touches user data** — the payload is *only* the `.app`; data in a separate user folder
+  isn't in the package, so the installer can't see or delete it. Two independent guarantees: the
+  installer doesn't delete data (data isn't packaged); cross-version *compatibility* (new code reading
+  old data) is the **app's** job via the additive / folders-as-truth rule.
+- Downgrade-protection: installer won't put an OLDER version over a newer one; numeric compare
+  (`0.12.0 > 0.10`).
+
+### Notarization roadmap (when the Apple Developer account lands → ship 0.12.1)
+- **One $99/yr membership = one Team ID covers ALL your apps AND all Apple platforms.** No per-app
+  enrollment/registration/approval for Developer-ID direct distribution. One Developer ID cert signs
+  everything; one App Store Connect API key notarizes everything.
+- **Notarization is per-build but automated:** `xcrun notarytool submit --wait` (~1–3 min, no human
+  review) + `xcrun stapler staple` the app *and* the pkg. Not an App Store review. Lapsing the $99
+  blocks *new* notarizations; already-shipped builds keep working (tickets don't expire).
+- **iOS is App-Store-only** — no notarize-and-hand-over path; that escape hatch is Mac-only.
+- **Updater caveat:** the swap script's ad-hoc `codesign --force --deep --sign -` would DESTROY a
+  Developer ID signature. For notarized builds, staple the `.app` before zipping and DROP the re-sign
+  in the swap (keep the notarized signature intact).
+
+### Planned — iOS companion app (separate long-lived branch, SAME repo)
+- **Capture (same-WiFi, Mac open):** native VisionKit scanner → upload to the Mac's existing LAN
+  capture server → Mac ingests + transcribes. No cloud, no QR, no Claude auth on the phone.
+- **Library (anywhere):** Mac mirrors its archive **one-way** into a shared **iCloud container**
+  (`iCloud.com.labern.combray`; needs the Team ID on both apps' entitlements — hence gated on
+  enrollment); iOS reads it, rebuilds a local index with `CombrayCore`, browses/reads/searches
+  offline. Read-only on iOS → **no bidirectional-sync conflicts** (Mac stays sole writer).
+- Slicing: the Mac-side iCloud mirror is independently useful → ship it to `main` as a normal Mac
+  feature; only iOS-specific code lives on the branch (small branch, avoids drift). `CombrayCore`
+  (models, Archive rebuild, AnthropicClient) ports to iOS as-is.
+
 ## Reusable lessons for future projects
 Distilled from building Combray — transferable patterns, and gotchas that cost real time so the next
 project doesn't re-pay for them.
@@ -588,6 +632,30 @@ project doesn't re-pay for them.
 - `releases/latest/download/…` is **CDN-cached** — verify a new release via the explicit
   `releases/download/vX/…` asset URL.
 
+### Self-updating a directly-distributed Mac app (Sparkle-free)
+- **Feed = the GitHub release tag.** Poll `releases/latest`, numeric-compare `tag_name` to the
+  running `CFBundleShortVersionString` (component-wise Ints, never lexical). Pull a one-line "what's
+  new" from the release `body` for the prompt.
+- **Install = swap the `.app`, not the `.pkg`.** A `.pkg` needs an admin prompt; replacing
+  `/Applications/App.app` in place doesn't (Applications is admin-writable). Ship a `.zip`
+  (`ditto -c -k --keepParent`) beside the pkg; download, `ditto -x -k` unzip, then a **detached**
+  script waits for the app's PID to exit → swap → re-sign (macOS 26) → `xattr -dr
+  com.apple.quarantine` → relaunch. Wire BOTH "click to restart now" and "apply on quit"
+  (`willTerminateNotification`); guard against a double-swap. Works only because data lives elsewhere.
+
+### Notarizing (when you DO have an Apple Developer account)
+- **One $99/yr account = one Team ID covers every app you publish AND every Apple platform.** No
+  per-app enrollment/approval for Developer-ID direct distribution; one Developer ID cert + one App
+  Store Connect API key serve all of them. (Enroll as **Individual** unless you want a company name —
+  Organization needs a D-U-N-S number.)
+- **Per-build but automated:** `notarytool submit --wait` (~1–3 min, no human review) + `stapler
+  staple` the app and the pkg; sign with Developer ID + hardened runtime + `--timestamp`. Result:
+  Gatekeeper-clean, no right-click→Open.
+- **iOS = App-Store-only** (per-version human review); the notarize-and-distribute escape hatch is
+  **Mac-only**.
+- Self-updating a *notarized* app: the swap must NOT re-ad-hoc-sign (it'd void the Developer ID
+  signature) — staple the `.app`, keep its signature, skip the re-sign.
+
 ### Claude API integration
 - "Sign in with Claude" (OAuth) = the user's **Pro/Max subscription** — **free plans are rejected at
   sign-in**, not later. An **API key** is a separate pay-as-you-go account. There is **no free path**
@@ -612,3 +680,7 @@ project doesn't re-pay for them.
   **force-push** (safety tooling will gate that for an explicit human OK). Make the first real commit
   encode the prior released code, so the *code* stays continuous even when the *commit log* is
   replaced.
+- **A branch is NOT a new repo.** A long-lived feature (e.g. an iOS companion sharing the core) is a
+  feature **branch in the same repo**, not a second repo — the whole point is sharing the package.
+  Dodge the long-branch drift trap by landing shared/foundational bits on `main` as they're ready and
+  keeping only the genuinely new-surface code on the branch.
