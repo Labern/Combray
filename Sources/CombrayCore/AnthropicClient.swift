@@ -130,7 +130,8 @@ public struct AnthropicClient: Sendable {
         self.model = model
     }
 
-    public func transcribe(imageURLs: [URL], model overrideModel: String? = nil) async throws -> TranscriptionResult {
+    public func transcribe(imageURLs: [URL], ownerContext: String? = nil,
+                           model overrideModel: String? = nil) async throws -> TranscriptionResult {
         let model = overrideModel ?? self.model
         let headers = try await Self.authHeaders()
 
@@ -160,6 +161,10 @@ public struct AnthropicClient: Sendable {
                                  "text": "You are Claude Code, Anthropic's official CLI for Claude."])
         }
         systemBlocks.append(["type": "text", "text": Self.instruction])
+        if let ownerContext, !ownerContext.isEmpty {
+            systemBlocks.append(["type": "text",
+                                 "text": "About the archive owner (use for meta.suspected_writer): \(ownerContext)"])
+        }
 
         let body: [String: Any] = [
             "model": model,
@@ -287,6 +292,68 @@ public struct AnthropicClient: Sendable {
         ]
     ] }
 
+    /// Re-reads an already-corrected transcription (TEXT ONLY — no images, so cheap) and returns
+    /// fresh derived metadata: summary, document type, people, quotes and the meta object. Used after
+    /// the user edits or accepts a corrected transcription, to keep the summary & meta in step.
+    public func analyzeText(transcription: String, ownerContext: String? = nil,
+                            model overrideModel: String? = nil) async throws -> TranscriptionResult {
+        let model = overrideModel ?? self.model
+        let headers = try await Self.authHeaders()
+
+        var systemBlocks: [[String: Any]] = []
+        if Keychain.credential()?.kind == .oauth {
+            systemBlocks.append(["type": "text",
+                                 "text": "You are Claude Code, Anthropic's official CLI for Claude."])
+        }
+        systemBlocks.append(["type": "text", "text": Self.analyzeInstruction])
+        if let ownerContext, !ownerContext.isEmpty {
+            systemBlocks.append(["type": "text",
+                                 "text": "About the archive owner (use for meta.suspected_writer): \(ownerContext)"])
+        }
+
+        let userText = "Here is the final, corrected transcription:\n\n<<<TRANSCRIPTION\n\(transcription)\n"
+            + "TRANSCRIPTION>>>\n\nExtract the metadata as the JSON described in your instructions."
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 4000,
+            "output_config": ["format": ["type": "json_schema", "schema": Self.schema]],
+            "system": systemBlocks,
+            "messages": [["role": "user", "content": [["type": "text", "text": userText]]]]
+        ]
+
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        request.httpMethod = "POST"
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 120
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw AnthropicError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        guard
+            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let blocks = root["content"] as? [[String: Any]],
+            let text = blocks.first(where: { $0["type"] as? String == "text" })?["text"] as? String,
+            let jsonData = Self.extractJSON(text).data(using: .utf8)
+        else { throw AnthropicError.noContent }
+        return try JSONDecoder().decode(TranscriptionResult.self, from: jsonData)
+    }
+
+    static let analyzeInstruction = """
+    You are given the final, user-corrected transcription of a document (between the markers). Do NOT \
+    rewrite the text. Read it and produce fresh metadata as a single JSON object matching the schema: \
+    a short document_type; a brief 1–3 sentence summary; the sender; recipients; the date; people \
+    mentioned; a few notable verbatim quotes; and the meta object (location, relationship, \
+    relationship_state, writer_goals, handwriting_profile, suspected_writer). For "transcription", \
+    echo the given text back unchanged. You are working from text only and cannot see the handwriting, \
+    so set meta.handwriting_profile to "". For meta.suspected_writer use any signature/content cues \
+    and the archive owner profile if one was provided. Respond with ONLY the JSON object.
+    """
+
     /// Resolves auth headers from the stored credential (refreshing an expired OAuth token).
     static func authHeaders() async throws -> [String: String] {
         guard var cred = Keychain.credential() else { throw AnthropicError.missingAPIKey }
@@ -372,9 +439,10 @@ public struct AnthropicClient: Sendable {
     Also study the HANDWRITING itself. In meta.handwriting_profile, give your best guess at the \
     writer's sex and approximate age based purely on handwriting style — letterforms, slant, \
     pressure, formality, fluency — e.g. "Likely female, 30s–40s", hedged honestly; use "" only if \
-    you truly cannot tell. In meta.suspected_writer, if a signature, named sender, or the hand and \
-    content of THIS document let you identify or strongly suspect who wrote it, name them with a \
-    brief reason (e.g. "Signed 'M' — likely Marcel"); otherwise set it to "".
+    you truly cannot tell. In meta.suspected_writer, if a signature, a named sender, the archive \
+    owner profile (provided separately, if any), or the hand and content of THIS document let you \
+    identify or strongly suspect who wrote it, name them with a brief reason (e.g. "Signed 'M' — \
+    likely Marcel", or "About the owner's ★★★★★/PARADOX work — written by them"); otherwise "".
 
     Respond with ONLY a single JSON object containing these fields and nothing else — no markdown, \
     no commentary.

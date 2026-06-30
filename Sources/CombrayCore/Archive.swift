@@ -289,6 +289,23 @@ public struct Archive: Sendable {
         return saved
     }
 
+    /// Re-applies only the *derived* analysis fields from a fresh reading of an edited transcription —
+    /// summary, the meta object, suspected writer, and notable quotes — WITHOUT touching the
+    /// transcription, title, date, participants, document type, or the handwriting guess (which needs
+    /// the images). Used after the user edits or accepts a corrected transcription.
+    @discardableResult
+    public func applyMetadata(_ r: TranscriptionResult, toLetterId letterId: String) throws -> Letter {
+        guard var letter = try letter(id: letterId) else { throw ArchiveError.letterNotFound }
+        letter.summary = Self.clean(r.summary)
+        letter.metaLocation = Self.clean(r.meta.location)
+        letter.metaRelationship = Self.clean(r.meta.relationship)
+        letter.metaRelationshipState = Self.clean(r.meta.relationship_state)
+        letter.metaWriterGoals = Self.clean(r.meta.writer_goals)
+        if let sw = Self.clean(r.meta.suspected_writer) { letter.metaSuspectedWriter = sw }
+        if !r.notable_quotes.isEmpty { letter.notableQuotes = r.notable_quotes.joined(separator: "\n") }
+        return try save(letter)
+    }
+
     // MARK: - Correspondence (chat thread + authors)
 
     /// All letters exchanged between this letter's two principals, oldest first — the chat thread.

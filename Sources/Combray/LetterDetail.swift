@@ -175,11 +175,11 @@ struct LetterDetailView: View {
                 addPageButton
 
                 Text("You can resize the sections to see more of the image or the transcription.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.faint.opacity(0.8))
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.faint)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 6)
+                    .padding(.top, 10)
             }
             .padding(Theme.gap)
         }

@@ -79,6 +79,28 @@ final class ArchiveController: ObservableObject {
     }
     @Published var showSettings = false
 
+    // Who the archive belongs to — sent as a short TEXT note with each transcription (no extra
+    // images) so the model can attribute the owner's own documents in meta.suspected_writer.
+    @Published var ownerName: String = UserDefaults.standard.string(forKey: "ownerName") ?? "Labern" {
+        didSet { UserDefaults.standard.set(ownerName, forKey: "ownerName") }
+    }
+    @Published var ownerProfile: String =
+        UserDefaults.standard.string(forKey: "ownerProfile") ?? ArchiveController.defaultOwnerProfile {
+        didSet { UserDefaults.standard.set(ownerProfile, forKey: "ownerProfile") }
+    }
+    static let defaultOwnerProfile = "Anything in my distinctive style is mine — especially notes "
+        + "about the PARADOX terminal aesthetic, ★★★★★ (five-star) ratings or reviews, monospace / "
+        + "box-drawing layouts, or a squirrel 🐿️ signature."
+
+    /// The owner context string sent to transcription/analysis, or nil if no name is set.
+    var ownerContext: String? {
+        let name = ownerName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return nil }
+        let profile = ownerProfile.trimmingCharacters(in: .whitespaces)
+        return profile.isEmpty ? "The archive owner is \(name)."
+                               : "The archive owner is \(name). \(profile)"
+    }
+
     // Adding letters
     @Published var showAddChoice = false
 
@@ -298,13 +320,14 @@ final class ArchiveController: ObservableObject {
     /// account isn't on a paid plan, it transparently retries with Sonnet.
     private func transcribeWithFallback(_ urls: [URL]) async throws -> TranscriptionResult {
         let primary = transcriptionModel.modelID
+        let owner = ownerContext
         do {
-            return try await client.transcribe(imageURLs: urls, model: primary)
+            return try await client.transcribe(imageURLs: urls, ownerContext: owner, model: primary)
         } catch let AnthropicError.http(status, msg)
                     where transcriptionModel == .auto && primary == "claude-opus-4-8"
                     && Self.looksLikePlanLimit(status, msg) {
             busy = "Switching to Sonnet for your plan…"
-            return try await client.transcribe(imageURLs: urls, model: "claude-sonnet-4-6")
+            return try await client.transcribe(imageURLs: urls, ownerContext: owner, model: "claude-sonnet-4-6")
         }
     }
 
@@ -597,6 +620,29 @@ final class ArchiveController: ObservableObject {
         guard var letter = selectedLetter else { return }
         letter.transcription = text
         update(letter)
+        Task { await refreshMetadata(forLetterId: letter.id, transcription: text) }
+    }
+
+    /// After a transcription is edited or an Ask correction is accepted, re-read the new text (text
+    /// only — no images) and refresh the summary, meta, suspected writer and quotes so they stay in
+    /// step. The transcription, title, date, participants, document type and handwriting guess are
+    /// left untouched. Silently does nothing if not signed in or the text is empty.
+    func refreshMetadata(forLetterId id: String, transcription: String) async {
+        guard Keychain.hasCredential(),
+              !transcription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        busy = "Updating summary & details…"
+        defer { busy = nil }
+        do {
+            let result = try await client.analyzeText(transcription: transcription,
+                                                      ownerContext: ownerContext,
+                                                      model: transcriptionModel.modelID)
+            try archive.applyMetadata(result, toLetterId: id)
+            backup(id)
+            reload()
+            if selectedLetterID == id { loadDetail() }
+        } catch {
+            errorText = "Couldn’t refresh the summary: \(error.localizedDescription)"
+        }
     }
 
     func update(_ letter: Letter) {

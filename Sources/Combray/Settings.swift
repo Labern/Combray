@@ -75,6 +75,17 @@ struct SettingsView: View {
 
             Divider().padding(.vertical, 4)
 
+            // MARK: About you (drives the "Suspected writer" guess)
+            Text("About you").font(Theme.label).foregroundStyle(Theme.faint)
+            TextField("Your name", text: $c.ownerName).textFieldStyle(.roundedBorder).font(Theme.big)
+            TextField("How to recognise things you wrote — your hallmarks, style, signature…",
+                      text: $c.ownerProfile, axis: .vertical)
+                .lineLimit(2...5).textFieldStyle(.roundedBorder).font(Theme.body)
+            Text("Sent as a short note with each transcription (no extra images) so Combray can guess the \u{201C}Suspected writer\u{201D} for documents you wrote.")
+                .font(Theme.small).foregroundStyle(Theme.faint)
+
+            Divider().padding(.vertical, 4)
+
             Toggle(isOn: $c.autoTranscribe) {
                 Text("Transcribe automatically when I add a letter").font(Theme.body)
             }
