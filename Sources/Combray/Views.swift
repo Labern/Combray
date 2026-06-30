@@ -87,8 +87,8 @@ struct RootView: View {
         .preferredColorScheme(darkMode ? .dark : .light)
         .overlay(alignment: .bottomLeading) {
             UpdateBubble(updater: updater)
-                .padding(.leading, 18)
-                .padding(.bottom, 70)
+                .padding(.leading, 22)
+                .padding(.bottom, 88)
         }
         .task { updater.start() }
         .overlay {
