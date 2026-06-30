@@ -29,6 +29,16 @@ public enum AppUpdate {
             .drop { $0 == "v" }
         return body.split(separator: ".").map { Int($0.prefix { $0.isNumber }) ?? 0 }
     }
+
+    /// Truncate to `max` characters at a word boundary, with an ellipsis.
+    static func truncate(_ s: String, max: Int) -> String {
+        guard s.count > max else { return s }
+        let cut = s.prefix(max)
+        if let space = cut.lastIndex(of: " ") {
+            return cut[..<space].trimmingCharacters(in: .whitespaces) + "…"
+        }
+        return cut + "…"
+    }
 }
 
 /// The slice of GitHub's `releases/latest` JSON the updater needs.
@@ -36,6 +46,8 @@ public struct GitHubRelease: Decodable {
     public let tagName: String
     public let htmlURL: String
     public let assets: [Asset]
+    public let name: String?     // release title
+    public let body: String?     // release notes (markdown)
 
     public struct Asset: Decodable {
         public let name: String
@@ -47,10 +59,29 @@ public struct GitHubRelease: Decodable {
         case tagName = "tag_name"
         case htmlURL = "html_url"
         case assets
+        case name
+        case body
     }
 
     /// The version stripped of the leading `v` (e.g. `v0.12.0` → `0.12.0`).
     public var version: String { String(tagName.drop { $0 == "v" }) }
+
+    /// A short "what's new" line for the update bubble — the first real sentence of the release
+    /// notes, with headers skipped and markdown markers stripped (e.g. "Adds an in-app auto-updater…").
+    public var whatsNew: String? {
+        for rawLine in (body ?? "").split(whereSeparator: \.isNewline) {
+            var s = rawLine.trimmingCharacters(in: .whitespaces)
+            if s.isEmpty || s.hasPrefix("#") { continue }           // skip blank lines and headers
+            while let f = s.first, "-*•>".contains(f) {              // strip list / quote markers
+                s.removeFirst(); s = s.trimmingCharacters(in: .whitespaces)
+            }
+            s = s.replacingOccurrences(of: "**", with: "")
+                 .replacingOccurrences(of: "__", with: "")
+                 .replacingOccurrences(of: "`", with: "")
+            if s.count >= 3 { return AppUpdate.truncate(s, max: 150) }
+        }
+        return nil
+    }
 
     /// Download URL of the first asset whose name ends with `suffix` (case-insensitive), e.g. ".zip".
     public func assetURL(suffix: String) -> URL? {

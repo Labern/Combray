@@ -66,4 +66,26 @@ final class AppUpdateTests: XCTestCase {
         let r = try GitHubRelease.decode(Data(json.utf8))
         XCTAssertNil(r.assetURL(suffix: ".zip"))
     }
+
+    // MARK: "what's new" line
+
+    /// The bubble's one-liner skips a markdown header, strips the bullet marker, and takes the first
+    /// real sentence of the release notes.
+    func testWhatsNewSkipsHeaderAndStripsMarkdown() throws {
+        let json = """
+        {"tag_name":"v0.12.0","html_url":"https://x","assets":[],
+         "body":"## What's new\\n\\n- **Adds** an in-app auto-updater that updates Combray itself.\\n- Minor fixes."}
+        """
+        let r = try GitHubRelease.decode(Data(json.utf8))
+        XCTAssertEqual(r.whatsNew, "Adds an in-app auto-updater that updates Combray itself.")
+    }
+
+    /// Empty or header-only notes yield no line (the bubble just omits the sentence).
+    func testWhatsNewNilWhenNoProse() throws {
+        let json = """
+        {"tag_name":"v0.12.0","html_url":"https://x","assets":[],"body":"# Release\\n\\n"}
+        """
+        let r = try GitHubRelease.decode(Data(json.utf8))
+        XCTAssertNil(r.whatsNew)
+    }
 }

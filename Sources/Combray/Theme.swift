@@ -368,7 +368,9 @@ func renderUpdatePreviewPNG(to path: String) {
                 QuoteBar()
             }
         }
-        UpdateBubble(updater: Updater(previewState: .ready(version: "0.12.0")))
+        UpdateBubble(updater: Updater(
+            previewState: .ready(version: "0.12.0"),
+            summary: "Adds an in-app auto-updater — Combray now spots new versions on GitHub and updates itself."))
             .padding(.leading, 18)
             .padding(.bottom, 70)
     }

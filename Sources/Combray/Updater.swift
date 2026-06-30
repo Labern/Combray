@@ -20,6 +20,7 @@ final class Updater: ObservableObject {
     }
 
     @Published private(set) var state: State = .idle
+    @Published private(set) var releaseSummary: String?   // "what's new" line from the release notes
     @Published var bubbleHidden = false     // user dismissed the bubble this run (update still applies on quit)
 
     private let repo = "Labern/Combray"
@@ -29,7 +30,7 @@ final class Updater: ObservableObject {
 
     init() {}
     /// Build an updater pinned to a fixed state — used only to render preview screenshots.
-    init(previewState: State) { state = previewState }
+    init(previewState: State, summary: String? = nil) { state = previewState; releaseSummary = summary }
 
     // MARK: lifecycle
 
@@ -80,6 +81,7 @@ final class Updater: ObservableObject {
         guard let assetURL = release.assetURL(suffix: ".zip") else { return }
         let version = release.version
         let dir = updatesDir
+        releaseSummary = release.whatsNew
         state = .downloading(version: version)
         Task {
             do {
