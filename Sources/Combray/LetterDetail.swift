@@ -309,9 +309,11 @@ struct LetterDetailView: View {
     /// screenshots / code keep their exact whitespace as transcribed.
     @ViewBuilder private var transcriptionView: some View {
         if TextReflow.isLayoutSignificant(letter.documentType) {
-            Text(letter.transcription)                    // screenshots / code — kept exactly as is now
-                .font(.system(size: 19))
-                .lineSpacing(8)
+            // Screenshots / code — mirror the form of the transcription verbatim. Monospaced so
+            // aligned columns and indentation line up exactly as captured.
+            Text(letter.transcription)
+                .font(.system(size: 16, design: .monospaced))
+                .lineSpacing(6)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
