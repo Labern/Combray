@@ -18,6 +18,7 @@ struct RootView: View {
     @State private var mode: SidebarMode = .letters
     @AppStorage("darkMode") private var darkMode = false
     @State private var showFeatureRequest = false
+    @State private var showHelpDesk = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,12 +38,21 @@ struct RootView: View {
                             .font(Theme.small).foregroundStyle(Theme.accent)
                             .transition(.opacity.combined(with: .scale))
                     }
-                    Button { openHelpDesk() } label: {
+                    Button { showHelpDesk.toggle() } label: {
                         Image(systemName: "headset")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Theme.accentDeep)
                     }
-                    .help("HelpDesk — message Labern on WhatsApp")
+                    .help("HelpDesk. Stuck on how something works? Open a little box, type your question, and it goes straight to Labern on WhatsApp for a human answer.")
+                    .popover(isPresented: $showHelpDesk, arrowEdge: .bottom) {
+                        WhatsAppPopover(title: "Got a question about how it works?",
+                                        blurb: "Ask anything about Combray — adding letters, transcribing, searching, and so on. This opens WhatsApp to send your question to Labern.",
+                                        placeholder: "Type your question…",
+                                        actionLabel: "Ask Labern",
+                                        actionIcon: "paperplane.fill",
+                                        send: { openWhatsApp("Combray question -- " + $0); showHelpDesk = false },
+                                        cancel: { showHelpDesk = false })
+                    }
 
                     Button { showFeatureRequest.toggle() } label: {
                         Label("Request feature", systemImage: "lightbulb")
@@ -50,14 +60,15 @@ struct RootView: View {
                             .foregroundStyle(Theme.accentDeep)
                     }
                     .labelStyle(.titleAndIcon)
-                    .help("Request a feature — message Labern on WhatsApp")
+                    .help("Request a feature. Wish Combray did something it doesn't? Open a little box, describe your idea, and it's sent to Labern on WhatsApp.")
                     .popover(isPresented: $showFeatureRequest, arrowEdge: .bottom) {
-                        FeatureRequestPopover { text in
-                            openWhatsApp("Combray feature request -- " + text)
-                            showFeatureRequest = false
-                        } cancel: {
-                            showFeatureRequest = false
-                        }
+                        WhatsAppPopover(title: "Request a feature",
+                                        blurb: "What would you like Combray to do? This opens WhatsApp to send your idea to Labern.",
+                                        placeholder: "Describe the feature…",
+                                        actionLabel: "Request feature",
+                                        actionIcon: "paperplane.fill",
+                                        send: { openWhatsApp("Combray feature request -- " + $0); showFeatureRequest = false },
+                                        cancel: { showFeatureRequest = false })
                     }
 
                     Button { withAnimation(.easeInOut(duration: 0.25)) { darkMode.toggle() } } label: {
@@ -65,7 +76,9 @@ struct RootView: View {
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Theme.accentDeep)
                     }
-                    .help(darkMode ? "Switch to Light mode" : "Switch to Dark mode")
+                    .help(darkMode
+                        ? "Switch to Light mode — the bright, paper-white theme, best for reading in daylight."
+                        : "Switch to Dark mode — a warm, dark theme that's easier on the eyes at night.")
                 }
             }
 
@@ -166,9 +179,15 @@ struct TranscribeSpinner: View {
     }
 }
 
-/// The small pop-down from the toolbar's "Request feature" button: type a request, then send it to
-/// Labern over WhatsApp.
-struct FeatureRequestPopover: View {
+/// A small pop-down from a toolbar button: a heading, a text field, and a send button that hands the
+/// typed text to `send` (which composes a WhatsApp message to Labern). Used by HelpDesk and Request
+/// feature.
+struct WhatsAppPopover: View {
+    let title: String
+    let blurb: String
+    let placeholder: String
+    let actionLabel: String
+    let actionIcon: String
     let send: (String) -> Void
     let cancel: () -> Void
     @State private var text = ""
@@ -178,11 +197,10 @@ struct FeatureRequestPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Request a feature").font(Theme.title)
-            Text("What would you like Combray to do? This opens WhatsApp to send it to Labern.")
-                .font(Theme.small).foregroundStyle(Theme.faint)
+            Text(title).font(Theme.title)
+            Text(blurb).font(Theme.small).foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
-            TextField("Describe the feature…", text: $text, axis: .vertical)
+            TextField(placeholder, text: $text, axis: .vertical)
                 .textFieldStyle(.plain).font(Theme.body).lineLimit(3...8)
                 .focused($focused)
                 .padding(12)
@@ -192,7 +210,7 @@ struct FeatureRequestPopover: View {
                 Button { cancel() } label: { Text("Cancel") }
                     .buttonStyle(BigButtonStyle(filled: false, compact: true))
                 Spacer()
-                Button { send(trimmed) } label: { Label("Request feature", systemImage: "paperplane.fill") }
+                Button { send(trimmed) } label: { Label(actionLabel, systemImage: actionIcon) }
                     .buttonStyle(BigButtonStyle(compact: true))
                     .disabled(trimmed.isEmpty)
             }

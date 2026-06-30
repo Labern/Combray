@@ -40,12 +40,14 @@ struct ExplainerView: View {
             }
             Button { c.startCapture() } label: { Label("Take photos with iPhone", systemImage: "iphone") }
                 .buttonStyle(BigButtonStyle())
+                .help("Take photos with your iPhone. Shows a QR code; scan it and your phone becomes a scanner — snap the pages and they fly straight into a new letter on this Mac. (Both devices on the same Wi-Fi.)")
                 .padding(.top, 4)
             Button { c.pickAndImport() } label: {
                 Label("Choose photos from this Mac", systemImage: "photo.on.rectangle")
                     .lineLimit(1).fixedSize()
             }
             .buttonStyle(BigButtonStyle(filled: false))
+            .help("Choose photos from this Mac. Pick one or more image files of a letter's pages (in order) and import them as a new letter to transcribe.")
             Text("or drag photos of a letter here")
                 .font(Theme.small).foregroundStyle(Theme.faint)
             if !c.hasAPIKey {
@@ -53,6 +55,7 @@ struct ExplainerView: View {
                     Label("Sign in with Claude", systemImage: "person.crop.circle")
                 }
                 .buttonStyle(BigButtonStyle(filled: false))
+                .help("Sign in with Claude. Connect your Claude account so Combray can transcribe — a browser page opens, you approve, and it signs you in automatically. Needed before the first transcription.")
             }
             Spacer(minLength: 0)
         }
@@ -201,13 +204,13 @@ struct LetterDetailView: View {
             }
             .buttonStyle(TapStyle())
             .foregroundStyle(Theme.accentDeep)
-            .help("Swap in a better-quality photo of this page")
+            .help("Replace this page. Swap in a clearer photo of the same page — take a new one with your iPhone, choose a file, or drag one in. The other pages stay as they are.")
             Button { c.pendingDeletePage = page } label: {
                 Label("Remove", systemImage: "trash")
             }
             .buttonStyle(TapStyle())
             .foregroundStyle(.red)
-            .help("Remove this page from the letter")
+            .help("Remove this page from the letter (after a confirmation). The remaining pages stay and are renumbered.")
         }
         .font(.system(size: 15, weight: .medium))
         .padding(.horizontal, 4)
@@ -233,6 +236,7 @@ struct LetterDetailView: View {
             loadDroppedURLs(providers) { urls in if !urls.isEmpty { c.addPages(from: urls) } }
             return true
         }
+        .help("Add a page to this letter. Photograph another page with your iPhone, choose a file, or drag one in — it's appended after the last page. Re-transcribe afterwards to include it.")
     }
 
     private var transcript: some View {
@@ -264,7 +268,7 @@ struct LetterDetailView: View {
                         }
                         .buttonStyle(TapStyle())
                         .foregroundStyle(Theme.accentDeep)
-                        .help("Open the transcription in a big, beautiful reading window")
+                        .help("View full size. Open the transcription in a big, centred reading window — beautifully set in serif (or monospace for screenshots) — for distraction-free reading. Click Close or anywhere outside to dismiss.")
                     }
                 }
                 if isEditing {
@@ -277,10 +281,12 @@ struct LetterDetailView: View {
                     HStack(spacing: 12) {
                         Button { isEditing = false } label: { Text("Cancel") }
                             .buttonStyle(BigButtonStyle(filled: false))
+                            .help("Cancel. Discard your edits and keep the transcription as it was.")
                         Button { c.saveTranscription(draft); isEditing = false } label: {
                             Label("Save", systemImage: "checkmark")
                         }
                         .buttonStyle(BigButtonStyle())
+                        .help("Save. Keep your edited transcription. Combray then re-reads it and updates the summary and meta to match the corrected text.")
                     }
                 } else if letter.transcription.isEmpty {
                     Text("Not transcribed yet — press Transcribe above.")
@@ -291,6 +297,7 @@ struct LetterDetailView: View {
                         Label("Edit", systemImage: "pencil")
                     }
                     .buttonStyle(BigButtonStyle(filled: false))
+                    .help("Edit. Fix the transcription by hand in a text editor. When you save, Combray re-reads the corrected text and refreshes the summary and meta to match.")
                 }
 
                 if let summary = letter.summary {
@@ -340,6 +347,7 @@ struct LetterDetailView: View {
                     Label("Ask about the transcription", systemImage: "text.bubble")
                 }
                 .buttonStyle(BigButtonStyle(fullWidth: true))
+                .help("Ask Claude about this transcription. Point at anything that looks wrong (\u{201C}what does the third line really say?\u{201D}) and chat about it. When Claude is confident, it proposes a corrected version you can apply with one click.")
             }
 
             // 2 · Transcribe / Re-transcribe (full width).
@@ -347,6 +355,9 @@ struct LetterDetailView: View {
                 Label(letter.transcription.isEmpty ? "Transcribe" : "Re-transcribe", systemImage: "sparkles")
             }
             .buttonStyle(BigButtonStyle(fullWidth: true))
+            .help(letter.transcription.isEmpty
+                ? "Transcribe. Send the page photos to Claude to read the handwriting and fill in the text, title, date, people, summary and meta — automatically."
+                : "Re-transcribe. Run Claude over the page photos again from scratch — useful after you replace a page with a clearer photo, or want a fresh reading.")
 
             // 3 · Copy / Export / Share — a third each (stacking only when the pane is tiny).
             let actionsLayout = actionsStacked
@@ -358,17 +369,22 @@ struct LetterDetailView: View {
                 }
                 .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
                 .disabled(letter.transcription.isEmpty)
+                .help("Copy. Put the full transcription on the clipboard as plain text, ready to paste anywhere.")
                 Button { c.exportDOCX(letter) } label: { Label("Export", systemImage: "doc.richtext") }
                     .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
+                    .help("Export. Save this letter as a Word (.docx) file — title, who/when, and the transcription — in the same beautiful serif you read on screen (monospaced for screenshots).")
                 Button { c.shareViaGmail(letter) } label: { Label("Share", systemImage: "paperplane") }
                     .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
+                    .help("Share. Open a new Gmail draft (in Chrome) pre-filled with this letter's details and transcription, ready to send to someone.")
             }
 
             // Correspondence chat — conditional, kept below the main actions.
             if c.correspondence(forLetter: letter.id).count > 1 {
                 Button { showChat = true } label: {
                     Label("Chat", systemImage: "bubble.left.and.bubble.right")
-                }.buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
+                }
+                .buttonStyle(BigButtonStyle(filled: false, fullWidth: true))
+                .help("Chat. See this letter in the context of the back-and-forth between the same two people — their whole correspondence laid out as a conversation, oldest first.")
             }
 
             if copied {
