@@ -76,12 +76,27 @@ final class SpeechController: NSObject, ObservableObject {
 
     // MARK: voice selection
 
-    /// Pick an English voice for the writer's sex (defaults to male). Gender parsing lives in
-    /// `SpeechSupport.wantsFemale` (unit-tested).
+    /// Pick the most natural English voice for the writer's sex (defaults to male). We rank the
+    /// *installed* voices by quality (premium > enhanced > default) and prefer a UK accent, rather
+    /// than grabbing the first match — which is the tinny compact system default. Voice ranking is
+    /// the unit-tested `SpeechSupport.voiceRank`; note the enhanced/premium voices only appear here
+    /// once the user has downloaded them (System Settings → Accessibility → Spoken Content).
     static func voice(forGender gender: String?) -> AVSpeechSynthesisVoice? {
         let want: AVSpeechSynthesisVoiceGender = SpeechSupport.wantsFemale(gender) ? .female : .male
-        let english = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
-        return english.first { $0.gender == want } ?? english.first ?? AVSpeechSynthesisVoice(language: "en-US")
+        let english = AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix("en") }
+            .filter { !$0.identifier.hasPrefix("com.apple.speech.synthesis.voice") }  // drop legacy/novelty voices
+        func tier(_ v: AVSpeechSynthesisVoice) -> Int {
+            switch v.quality { case .premium: return 2; case .enhanced: return 1; default: return 0 }
+        }
+        func rank(_ v: AVSpeechSynthesisVoice) -> Int {
+            SpeechSupport.voiceRank(qualityTier: tier(v), language: v.language, name: v.name)
+        }
+        let matching = english.filter { $0.gender == want }
+        let pool = matching.isEmpty ? english : matching
+        return pool.max { rank($0) < rank($1) }
+            ?? AVSpeechSynthesisVoice(language: "en-GB")
+            ?? AVSpeechSynthesisVoice(language: "en-US")
     }
 }
 

@@ -13,6 +13,11 @@ struct JustifiedText: NSViewRepresentable {
     var paragraphSpacing: CGFloat
     var highlight: NSRange? = nil          // the word being read aloud, highlighted live
 
+    /// Remembers the last real width SwiftUI proposed, so a measurement pass that proposes a nil /
+    /// infinite width still wraps to the pane instead of ballooning to the text's single-line width.
+    final class Coordinator { var lastWidth: CGFloat = 0 }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NSTextView {
         let tv = NSTextView()
         tv.isEditable = false
@@ -23,6 +28,12 @@ struct JustifiedText: NSViewRepresentable {
         tv.textContainer?.widthTracksTextView = true
         tv.isVerticallyResizable = true
         tv.isHorizontallyResizable = false
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        tv.minSize = .zero
+        // Defer to SwiftUI's width — don't let the text view force its wide single-line fitting size
+        // onto the layout (that's what pushed the transcription off the side of the pane).
+        tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        tv.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return tv
     }
 
@@ -40,9 +51,14 @@ struct JustifiedText: NSViewRepresentable {
     /// Report the height the text needs at the proposed width, so the SwiftUI layout reserves the
     /// right space (no clipping, no overlap).
     func sizeThatFits(_ proposal: ProposedViewSize, nsView tv: NSTextView, context: Context) -> CGSize? {
-        guard let width = proposal.width, width.isFinite, width > 0,
-              let container = tv.textContainer, let lm = tv.layoutManager else { return nil }
-        container.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
+        // Use the proposed width when it's real; otherwise reuse the last real width so a nil /
+        // infinite proposal doesn't fall back to the text's (huge) single-line intrinsic width.
+        let width: CGFloat
+        if let w = proposal.width, w.isFinite, w > 0 { width = w; context.coordinator.lastWidth = w }
+        else if context.coordinator.lastWidth > 0 { width = context.coordinator.lastWidth }
+        else { return nil }
+        guard let container = tv.textContainer, let lm = tv.layoutManager else { return nil }
+        container.size = CGSize(width: width, height: .greatestFiniteMagnitude)
         lm.ensureLayout(for: container)
         return CGSize(width: width, height: ceil(lm.usedRect(for: container).height))
     }

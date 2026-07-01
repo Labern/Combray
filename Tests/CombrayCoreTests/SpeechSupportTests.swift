@@ -42,4 +42,16 @@ final class SpeechSupportTests: XCTestCase {
         XCTAssertEqual(SpeechSupport.clock(5), "0:05")
         XCTAssertEqual(SpeechSupport.clock(0), "0:00")
     }
+
+    /// Voice ranking: quality beats accent, and a UK accent beats a US one at equal quality — so we
+    /// never play the tinny compact default when a better voice is installed.
+    func testVoiceRankPrefersQualityThenUKAccent() {
+        let premiumUS = SpeechSupport.voiceRank(qualityTier: 2, language: "en-US", name: "Zoe")
+        let enhancedGB = SpeechSupport.voiceRank(qualityTier: 1, language: "en-GB", name: "Daniel")
+        let defaultGB = SpeechSupport.voiceRank(qualityTier: 0, language: "en-GB", name: "Kate")
+        let defaultUS = SpeechSupport.voiceRank(qualityTier: 0, language: "en-US", name: "Fred")
+        XCTAssertGreaterThan(premiumUS, enhancedGB)     // quality dominates accent
+        XCTAssertGreaterThan(enhancedGB, defaultGB)     // enhanced beats default
+        XCTAssertGreaterThan(defaultGB, defaultUS)      // at equal quality, UK accent wins
+    }
 }

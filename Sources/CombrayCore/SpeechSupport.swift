@@ -32,4 +32,18 @@ public enum SpeechSupport {
     public static func clock(_ t: TimeInterval) -> String {
         let s = max(0, Int(t.rounded())); return String(format: "%d:%02d", s / 60, s % 60)
     }
+
+    /// Rank a candidate voice so we play the *most natural* one installed instead of the tinny
+    /// compact default. Quality dominates (premium > enhanced > default), then a British accent
+    /// (the user is in the UK), then a small nudge for the voices that actually sound human.
+    /// `qualityTier`: 2 = premium, 1 = enhanced, 0 = default. Pure so it's unit-testable.
+    public static func voiceRank(qualityTier: Int, language: String, name: String) -> Int {
+        var s = qualityTier * 100
+        if language == "en-GB" { s += 30 }
+        else if language == "en-IE" || language == "en-AU" { s += 8 }
+        let natural: Set<String> = ["daniel", "kate", "serena", "oliver", "stephanie", "jamie",
+                                    "ava", "tom", "zoe", "evan", "nathan", "samantha", "allison", "susan"]
+        if natural.contains(name.lowercased()) { s += 5 }
+        return s
+    }
 }

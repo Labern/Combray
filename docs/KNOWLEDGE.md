@@ -600,6 +600,8 @@ view, ordinal sidebar); Gmail-share 400 fix; "Page N".
 **v0.12.2 (patch):** the **critical updater fix** (below) + instant button press + "See modern chat
 view (beta)".
 **v0.13.0 (minor):** read-aloud, the "Updated!" bubble, and endearment→name inference.
+**v0.13.1 (patch):** two follow-up fixes from real use — the justified transcription overflowing the
+pane, and the read-aloud voice sounding generic (both below).
 
 ### Updater bug — root-owned installs (the big one)
 - **Symptom:** "Restart to update" reopened the *old* app. **Cause:** apps installed via `.pkg` or
@@ -622,6 +624,13 @@ view (beta)".
 - **Justified paragraphs:** join paragraphs with a **single `\n`**, not `\n\n` — `\n\n` adds a literal
   empty line AND `paragraphSpacing` stacks on top (double gap). Control the gap with `paragraphSpacing`
   alone (~18pt reads as a clean break).
+- **NSViewRepresentable overflow (v0.13.1 fix):** `JustifiedText` ran off the side of the pane because
+  `sizeThatFits` returned **`nil`** whenever SwiftUI proposed a `nil`/infinite width (it does this in
+  measurement passes). On `nil`, SwiftUI falls back to the `NSTextView`'s `fittingSize` — the text's
+  *single-line* width — and doesn't clip, so it overflowed. Fix: **remember the last real width in a
+  `Coordinator`** and wrap to it when the proposal is nil; also set the text view's horizontal
+  content-compression-resistance + hugging to **`.defaultLow`** so it never forces its wide fitting
+  size onto SwiftUI. (`container.size` + `layoutManager.usedRect` still measures the wrapped height.)
 - **Read-aloud word highlight** = a `.backgroundColor` attribute on the spoken range in the
   `NSTextView`'s `textStorage` (set base text only when it changes; just re-paint the bg per word).
 - **AVSpeechSynthesizer:** rate is the **global** `AVSpeechUtteranceDefaultSpeechRate` (not a static);
@@ -629,6 +638,12 @@ view (beta)".
   "male"** — parse female first or you'll misgender. No seek API → ±15s skip = `stop` + re-`speak`
   from a word offset; `willSpeakRangeOfSpeechString` drives both the highlight and the position timer
   (total is estimated from word count ÷ ~165 wpm).
+- **Voice quality (v0.13.1 fix):** `AVSpeechSynthesisVoice.speechVoices().first{…}` grabs the **tinny
+  compact default**. Rank installed voices by **`.quality` (premium > enhanced > default)** and prefer
+  the **UK accent** (`en-GB`) of the detected sex, dropping legacy/novelty voices (identifier prefix
+  `com.apple.speech.synthesis.voice`). Ranking is pure/tested in `SpeechSupport.voiceRank`. **Caveat:**
+  enhanced/premium voices only appear in `speechVoices()` once the user downloads them (System Settings
+  → Accessibility → Spoken Content → System Voice → Manage Voices) — we pick the best *installed* one.
 - **Gmail compose URL** 400s when `?body=` is long → cap the inline body, copy the full text to the
   clipboard for long letters.
 - **"Updated!" bubble:** detect a just-finished update by comparing a stored `lastLaunchedVersion`
