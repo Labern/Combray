@@ -20,11 +20,13 @@ struct CombrayApp: App {
             renderLetterPreviewPNG(to: args[i + 1])
             exit(0)
         }
-        if let i = args.firstIndex(of: "--render-justified"), i + 1 < args.count {
-            let w = (i + 2 < args.count ? Double(args[i + 2]) : nil).map { CGFloat($0) } ?? 520
+        if let i = args.firstIndex(of: "--render-scene"), i + 2 < args.count {
+            let scene = args[i + 1]
+            let out = args[i + 2]
+            let w = (i + 3 < args.count ? Double(args[i + 3]) : nil).map { CGFloat($0) } ?? 560
             let app = NSApplication.shared
             app.setActivationPolicy(.accessory)
-            renderJustifiedProbePNG(to: args[i + 1], width: w)   // schedules snapshot + exit(0)
+            renderScenePNG(scene: scene, to: out, width: w)      // schedules snapshot + exit(0)
             app.run()                                            // manual loop; never returns
         }
         if args.contains("--serve") {

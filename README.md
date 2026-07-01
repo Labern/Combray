@@ -45,18 +45,68 @@ cd Combray
 swift run Combray
 ```
 
-## What it does
+## Features
 
-- **Sign in with Claude** — one click, no API key (uses your Claude plan). A browser page opens,
-  you approve, and you're in.
-- **Add a letter from your iPhone** — the Mac shows a QR code; open it on your phone, photograph
-  each page (they appear in a strip as you go), and they upload straight into a new letter. Your
-  phone even shows *Sent → Transcribing → Done*. (Or drag photos in / choose from the Mac.)
-- **Claude transcribes** the handwriting — faithfully, preserving stars, symbols, and layout — and
-  fills in a "Letter to … from … about …" title, the sender, recipients, date, and a summary.
-  Everything is editable; pinch the photo to zoom.
-- **Browse** by person or year, read a back-and-forth correspondence as a **chat**, and **search**
-  the full text of every letter.
+Combray takes a photograph of a handwritten letter and turns it into a permanent, searchable,
+beautifully-set archive entry — the original image on one side, a faithful transcription on the
+other. Here is the full tour.
+
+### Capture — get a letter in, however you like
+
+- **Photograph with your iPhone.** The Mac shows a **QR code**; open it on your phone and photograph
+  each page. They appear in a strip as you shoot and upload straight into a new letter — your phone
+  even shows *Sent → Transcribing → Done*. No companion app to install.
+- **Or drag & drop** photos onto the window, or **choose files** from the Mac. Any way of getting the
+  pictures across works.
+- **Sign in with Claude** — one click, no API key. Combray uses your existing Claude plan: a browser
+  page opens, you approve, and you're in.
+
+### Transcribe — Claude reads the handwriting
+
+![Side by side](docs/feature-side-by-side.png)
+
+- **Faithful transcription** of even near-illegible cursive, preserving stars, symbols, and the
+  letter's layout.
+- **Structured details, extracted automatically** — a "Letter to … from … about …" title, the
+  sender and recipients, the date, a short summary, and notable quotes.
+- **Endearment → real name.** If your mother signs every letter "sweetness," Combray infers who that
+  really is and records the real name in the *To*/*From* field, keeping the original endearment too.
+- **Everything is editable.** Fix any word and Combray refreshes the summary and details to match.
+  Pinch the photo to zoom; drag the divider to give either side more room; right-click a page to
+  replace it with a clearer photo or add another.
+
+### Read — a view made for reading
+
+![Read aloud](docs/feature-read-aloud.png)
+
+- **Set like a real letter.** Paragraphs are reflowed and **justified** in a warm serif — no jagged
+  early line-breaks. (Screenshots and code keep their exact layout in monospace instead.)
+- **Read aloud.** Press play to hear the letter, with the **word being spoken highlighted** as it
+  goes, a **position / total timer**, and **±15-second** skip. The voice matches the writer's likely
+  sex; if your Mac only has the built-in robotic voices, one click installs a natural one (free).
+- **View full size** opens the transcription big and centred for a comfortable read.
+
+![Full size reading](docs/feature-full-size.png)
+
+### Organise, search & revisit
+
+- **Browse by People** to see everyone someone corresponded with, or **by Years** to read your
+  archive as a timeline.
+- **Full-text search** across every letter — *"Find a specific letter"* by theme, period, writer, or
+  a pair of people, with ranked, highlighted results.
+- **Read a correspondence as a chat** *(beta)* — the back-and-forth between two people laid out like
+  a modern messaging thread.
+- **Pin** up to three important letters to the top of the sidebar.
+
+### Keep & share
+
+- **Export to Word** (`.docx`) in the same beautiful font you read on screen.
+- **Share to Gmail** — opens a draft with the letter, one click.
+- **Meta — what the letter quietly reveals.** An optional panel surfaces Claude's read on the likely
+  location, relationship, its state, the writer's goals, and their likely sex and age.
+- **Light & Dark mode**, switchable from the toolbar; the whole look is built on design tokens so it
+  re-themes in one place.
+- **Automatic updates** (see above) and **one-click iCloud backup** of every letter folder.
 
 ## Your data is yours
 

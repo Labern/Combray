@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Combray — every letter, kept forever</title>
+<meta name="description" content="Combray photographs your handwritten letters, transcribes the handwriting with Claude, and keeps them in a searchable archive — the original beside a faithful reading, for good. For macOS." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --paper:#FAF5EB; --paper-2:#F3E9D8; --paper-3:#EFE3CE;
+  --ink:#1E1912; --ink-soft:#4C4336; --muted:#8B806E;
+  --gold:#B0761A; --gold-bright:#D9A93B; --gold-deep:#8A5B12; --gold-soft:#EBD8A6;
+  --line:#E4D8BF; --dark:#171009; --dark-2:#211809; --dark-ink:#EDE3CE;
+  --display:'Fraunces',Georgia,'Times New Roman',serif;
+  --body:'Newsreader',Georgia,serif;
+  --mono:ui-monospace,'SF Mono',Menlo,monospace;
+  --radius:16px; --shadow:0 30px 80px -30px rgba(60,40,10,.45);
+  --maxw:1120px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--paper); color:var(--ink); font-family:var(--body);
+  font-size:19px; line-height:1.72; -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility; overflow-x:hidden;
+  background-image:radial-gradient(1200px 600px at 50% -10%, #FFFBF2 0%, rgba(255,251,242,0) 60%);
+}
+::selection{background:var(--gold-soft); color:var(--ink)}
+a{color:var(--gold-deep); text-decoration:none}
+img{max-width:100%; display:block}
+.wrap{max-width:var(--maxw); margin:0 auto; padding:0 28px}
+
+/* subtle paper grain */
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.035;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode:multiply;
+}
+main,nav,footer{position:relative; z-index:1}
+
+/* ---------- nav ---------- */
+nav{
+  position:sticky; top:0; z-index:50; display:flex; align-items:center; justify-content:space-between;
+  padding:16px 28px; transition:background .4s ease, box-shadow .4s ease, backdrop-filter .4s ease;
+}
+nav.scrolled{background:rgba(250,245,235,.82); backdrop-filter:saturate(1.3) blur(14px); box-shadow:0 1px 0 var(--line)}
+.brand{display:flex; align-items:center; gap:11px; font-family:var(--display); font-weight:600; font-size:1.28rem; letter-spacing:.01em}
+.brand .made{width:30px; height:26px}
+.nav-links{display:flex; align-items:center; gap:30px}
+.nav-links a{color:var(--ink-soft); font-size:1rem; letter-spacing:.01em}
+.nav-links a:hover{color:var(--gold-deep)}
+.nav-cta{padding:9px 20px; border-radius:999px; background:var(--ink); color:var(--paper)!important; font-weight:500; font-size:.98rem; transition:transform .2s, background .2s}
+.nav-cta:hover{transform:translateY(-1px); background:var(--gold-deep)}
+@media(max-width:720px){.nav-links a:not(.nav-cta){display:none}}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex; align-items:center; gap:11px; font-family:var(--body); font-weight:500;
+  font-size:1.12rem; padding:16px 30px; border-radius:14px; cursor:pointer; border:1.5px solid transparent;
+  transition:transform .18s ease, box-shadow .3s ease, background .25s; letter-spacing:.005em}
+.btn svg{width:20px;height:20px}
+.btn-gold{
+  color:#2A1C05; background:linear-gradient(180deg,#E6C25D,#CE982E);
+  box-shadow:0 14px 34px -12px rgba(150,100,20,.6), inset 0 1px 0 rgba(255,255,255,.55);
+}
+.btn-gold:hover{transform:translateY(-2px); box-shadow:0 22px 44px -12px rgba(150,100,20,.66), inset 0 1px 0 rgba(255,255,255,.6)}
+.btn-ghost{color:var(--ink); background:transparent; border-color:var(--line)}
+.btn-ghost:hover{border-color:var(--gold); color:var(--gold-deep); transform:translateY(-2px)}
+.btn-sub{font-size:.82em; opacity:.7; font-weight:400}
+
+/* ---------- hero ---------- */
+.hero{text-align:center; padding:52px 0 10px}
+.eyebrow{display:inline-flex; align-items:center; gap:10px; color:var(--gold-deep); font-family:var(--display);
+  font-weight:500; letter-spacing:.16em; text-transform:uppercase; font-size:.82rem; margin-bottom:26px}
+.eyebrow .made{width:26px;height:22px}
+h1{font-family:var(--display); font-weight:600; font-size:clamp(2.9rem,7.4vw,5.6rem); line-height:1.02;
+  letter-spacing:-.02em; color:var(--ink); margin:0 auto; max-width:15ch}
+h1 em{font-style:italic; color:var(--gold-deep)}
+.lede{font-size:clamp(1.15rem,2.4vw,1.45rem); color:var(--ink-soft); max-width:44ch; margin:26px auto 0; line-height:1.6}
+.tagline{font-style:italic; color:var(--muted); margin-top:16px; font-size:1.08rem}
+.cta-row{display:flex; gap:16px; justify-content:center; align-items:center; flex-wrap:wrap; margin-top:36px}
+.hero-meta{margin-top:18px; color:var(--muted); font-size:.95rem; letter-spacing:.02em}
+.hero-meta b{color:var(--gold-deep); font-weight:600}
+
+/* ---------- mac window frame ---------- */
+.window{border-radius:var(--radius); overflow:hidden; border:1px solid var(--line);
+  background:#fff; box-shadow:var(--shadow)}
+.window .bar{height:38px; display:flex; align-items:center; gap:8px; padding:0 15px;
+  background:linear-gradient(180deg,#F4ECDD,#EADFC9); border-bottom:1px solid var(--line)}
+.window .bar i{width:12px;height:12px;border-radius:50%;display:block}
+.window .bar i:nth-child(1){background:#E6A18D} .window .bar i:nth-child(2){background:#E9CE86} .window .bar i:nth-child(3){background:#A9CE9A}
+.window .bar .t{flex:1; text-align:center; font-family:var(--display); font-size:.86rem; color:var(--muted); margin-right:36px}
+.window img{width:100%; display:block}
+
+.hero-shot{max-width:1000px; margin:56px auto 0; transform:perspective(2200px) rotateX(4deg); transition:transform .8s ease}
+.hero-shot.settled{transform:perspective(2200px) rotateX(0deg)}
+
+/* ---------- sections ---------- */
+section{padding:96px 0}
+.sec-head{text-align:center; max-width:40ch; margin:0 auto 12px}
+.kicker{color:var(--gold-deep); font-family:var(--display); font-weight:500; letter-spacing:.14em; text-transform:uppercase; font-size:.8rem}
+h2{font-family:var(--display); font-weight:600; font-size:clamp(2rem,4.4vw,3.1rem); line-height:1.08; letter-spacing:-.015em; margin:12px 0 0}
+.sec-sub{color:var(--ink-soft); font-size:1.12rem; max-width:52ch; margin:18px auto 0; text-align:center}
+
+.feature{display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center; margin-top:70px}
+.feature:first-of-type{margin-top:56px}
+.feature.rev .f-text{order:2}
+.feature .f-text h3{font-family:var(--display); font-weight:600; font-size:1.9rem; letter-spacing:-.01em; line-height:1.12}
+.feature .f-text .num{font-family:var(--display); color:var(--gold); font-size:1rem; letter-spacing:.1em; font-weight:600}
+.feature .f-text p{color:var(--ink-soft); margin-top:14px; font-size:1.08rem}
+.feature ul{list-style:none; margin-top:18px; display:flex; flex-direction:column; gap:10px}
+.feature ul li{position:relative; padding-left:26px; color:var(--ink-soft)}
+.feature ul li::before{content:""; position:absolute; left:2px; top:.62em; width:8px; height:8px; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold-deep))}
+@media(max-width:860px){
+  .feature{grid-template-columns:1fr; gap:34px; margin-top:56px}
+  .feature.rev .f-text{order:0}
+  section{padding:66px 0}
+}
+
+/* divider rule */
+.rule{width:100%; max-width:var(--maxw); height:1px; margin:0 auto; background:linear-gradient(90deg,transparent,var(--line),transparent)}
+
+/* ---------- modes grid ---------- */
+.grid{display:grid; grid-template-columns:repeat(3,1fr); gap:22px; margin-top:56px}
+@media(max-width:860px){.grid{grid-template-columns:1fr}}
+.card{background:linear-gradient(180deg,#FCF8F0,#F6EDDC); border:1px solid var(--line); border-radius:18px; padding:30px 28px;
+  transition:transform .25s ease, box-shadow .3s ease}
+.card:hover{transform:translateY(-4px); box-shadow:0 24px 50px -28px rgba(120,80,10,.4)}
+.card .ic{width:42px; height:42px; display:grid; place-items:center; border-radius:12px;
+  background:linear-gradient(180deg,#F0DCA6,#E2C169); color:#4A340B; margin-bottom:16px}
+.card .ic svg{width:22px;height:22px}
+.card h4{font-family:var(--display); font-weight:600; font-size:1.32rem; letter-spacing:-.01em}
+.card p{color:var(--ink-soft); margin-top:8px; font-size:1.02rem}
+.card .beta{font-family:var(--display); font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gold-deep); border:1px solid var(--gold-soft); border-radius:999px; padding:2px 9px; margin-left:8px; vertical-align:middle}
+
+/* ---------- dark band ---------- */
+.band{background:var(--dark); color:var(--dark-ink); border-top:1px solid #2c2113; border-bottom:1px solid #2c2113;
+  background-image:radial-gradient(900px 500px at 80% 0%, rgba(217,169,59,.10), transparent 60%)}
+.band h2{color:#F6ECD6}
+.band .sec-sub, .band p{color:#C9BC9F}
+.band .folder{font-family:var(--mono); color:#E7D6A6; background:#241a0c; border:1px solid #3a2c15; border-radius:12px;
+  padding:16px 20px; margin-top:26px; font-size:.94rem; line-height:2; overflow-x:auto}
+.band .folder .c{color:#8f7f5f}
+
+/* ---------- install / trial ---------- */
+.install{text-align:center}
+.pricecard{max-width:560px; margin:44px auto 0; background:linear-gradient(180deg,#FCF7EC,#F4E9D5);
+  border:1px solid var(--line); border-radius:24px; padding:46px 40px; box-shadow:var(--shadow); position:relative; overflow:hidden}
+.pricecard::after{content:""; position:absolute; inset:-2px; border-radius:24px; padding:2px; pointer-events:none;
+  background:linear-gradient(135deg,var(--gold-bright),transparent 40%,transparent 60%,var(--gold-soft));
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude; opacity:.5}
+.pricecard .price{font-family:var(--display); font-size:3.2rem; font-weight:600; letter-spacing:-.02em; line-height:1}
+.pricecard .price span{font-size:1.1rem; color:var(--muted); font-weight:400; letter-spacing:0}
+.pricecard .trial{color:var(--gold-deep); font-family:var(--display); letter-spacing:.04em; margin-top:6px; font-weight:500}
+.brew{display:flex; align-items:center; gap:12px; justify-content:center; margin-top:22px; flex-wrap:wrap}
+.brew code{font-family:var(--mono); font-size:.94rem; background:#2a2113; color:#f0e2b6; padding:12px 16px; border-radius:10px}
+.copy{border:1px solid var(--line); background:#fff; border-radius:10px; padding:11px 15px; cursor:pointer; font-family:var(--body); color:var(--ink-soft); transition:.2s}
+.copy:hover{border-color:var(--gold); color:var(--gold-deep)}
+.fine{color:var(--muted); font-size:.92rem; margin-top:20px}
+.soon{margin-top:22px; color:var(--muted); font-size:.95rem}
+.soon b{color:var(--ink)}
+
+/* ---------- footer ---------- */
+footer{text-align:center; padding:56px 28px 70px; color:var(--muted); border-top:1px solid var(--line)}
+footer .brand{justify-content:center; color:var(--ink); margin-bottom:14px}
+footer a{color:var(--gold-deep)}
+footer .small{font-size:.9rem; margin-top:10px}
+
+/* ---------- reveal ---------- */
+.reveal{opacity:0; transform:translateY(26px); transition:opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1; transform:none}
+@media(prefers-reduced-motion:reduce){
+  .reveal{opacity:1; transform:none; transition:none}
+  .hero-shot{transform:none!important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<!-- madeleine symbol -->
+<svg width="0" height="0" style="position:absolute"><symbol id="madeleine" viewBox="0 0 100 80">
+  <defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#F0D07E"/><stop offset="1" stop-color="#C68F27"/></linearGradient></defs>
+  <path d="M50 7 C75 7 91 30 91 57 C91 66 85 71 74 71 L26 71 C15 71 9 66 9 57 C9 30 25 7 50 7 Z" fill="url(#mg)" stroke="#9A6C1B" stroke-width="1.4"/>
+  <g stroke="#9A6C1B" stroke-width="1.1" stroke-linecap="round" opacity=".5">
+    <path d="M50 68 L18 50" fill="none"/><path d="M50 68 L28 30" fill="none"/><path d="M50 68 L40 17" fill="none"/>
+    <path d="M50 68 L50 13" fill="none"/><path d="M50 68 L60 17" fill="none"/><path d="M50 68 L72 30" fill="none"/><path d="M50 68 L82 50" fill="none"/>
+  </g>
+</symbol></svg>
+
+<nav id="nav">
+  <a class="brand" href="#top"><svg class="made"><use href="#madeleine"/></svg>Combray</a>
+  <div class="nav-links">
+    <a href="#transcribe">Features</a>
+    <a href="#read">Reading</a>
+    <a href="#modes">Everything</a>
+    <a class="nav-cta" href="#install">Download</a>
+  </div>
+</nav>
+
+<main id="top">
+
+  <!-- HERO -->
+  <header class="hero wrap">
+    <span class="eyebrow reveal"><svg class="made"><use href="#madeleine"/></svg>For&nbsp;macOS</span>
+    <h1 class="reveal">Every letter,<br><em>kept forever.</em></h1>
+    <p class="lede reveal">Combray photographs your handwritten letters, transcribes the handwriting with Claude, and keeps them in a searchable archive — the original beside a faithful reading, for good.</p>
+    <p class="tagline reveal">One bite of the madeleine brings it all back.</p>
+    <div class="cta-row reveal">
+      <a class="btn btn-gold" href="https://github.com/Labern/Combray/releases/latest/download/Combray.pkg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+        Download for Mac
+      </a>
+      <a class="btn btn-ghost" href="#install">Install with Homebrew</a>
+    </div>
+    <p class="hero-meta reveal">macOS 13+ · <b>Free for 28 days</b> · no account needed</p>
+    <div class="hero-shot reveal" id="heroShot">
+      <div class="window">
+        <div class="bar"><i></i><i></i><i></i><span class="t">Combray — Letter to my dear friend</span></div>
+        <img src="feature-side-by-side.png" alt="Combray showing a handwritten letter beside its transcription" />
+      </div>
+    </div>
+  </header>
+
+  <!-- WHAT IT IS -->
+  <section id="what" style="padding-top:70px">
+    <div class="wrap sec-head reveal" style="max-width:56ch">
+      <span class="kicker">What it is</span>
+      <h2>A home for handwriting.</h2>
+      <p class="sec-sub" style="max-width:none">Boxes of letters, near-illegible cursive, dates you can't quite read. Combray takes a photo of each page, has <b>Claude</b> read the hand and pull out who wrote it, to whom, when, and what it says — then keeps it all in plain folders on your Mac that you own outright. Every mode below is part of that one flow: <b>capture → transcribe → read → keep.</b></p>
+    </div>
+  </section>
+
+  <div class="rule"></div>
+
+  <!-- TRANSCRIBE -->
+  <section id="transcribe">
+    <div class="wrap">
+      <div class="feature reveal">
+        <div class="f-text">
+          <div class="num">01 — Capture &amp; Transcribe</div>
+          <h3>Photograph a letter. Claude reads it.</h3>
+          <p>Scan the on-screen <b>QR code</b> with your iPhone and photograph each page — they fly to your Mac and open as a new letter. Or drag photos in, or choose them from the Mac. Then Claude transcribes the handwriting faithfully and fills in the details.</p>
+          <ul>
+            <li>Faithful transcription of even near-illegible cursive</li>
+            <li>Auto-extracts the title, sender, recipients, date &amp; a summary</li>
+            <li>Original photo on the left, editable reading on the right</li>
+            <li>Sign in with your Claude plan — no API key</li>
+          </ul>
+        </div>
+        <div class="window"><div class="bar"><i></i><i></i><i></i><span class="t">Combray</span></div>
+          <img src="feature-side-by-side.png" alt="Side-by-side letter photo and transcription" /></div>
+      </div>
+
+      <!-- READ -->
+      <div class="feature rev reveal" id="read">
+        <div class="f-text">
+          <div class="num">02 — Read &amp; Read Aloud</div>
+          <h3>Set like a real letter — and read to you.</h3>
+          <p>Paragraphs are reflowed and <b>justified</b> in a warm serif, never jagged. Press play to <b>hear</b> the letter, with the word being spoken highlighted, a running timer, and 15-second skips.</p>
+          <ul>
+            <li>Justified, paragraph-perfect reading view</li>
+            <li>Read-aloud with live word highlighting &amp; ±15s skip</li>
+            <li>Position / total timer as it plays</li>
+            <li>One click installs a natural macOS voice (free)</li>
+          </ul>
+        </div>
+        <div class="window"><div class="bar"><i></i><i></i><i></i><span class="t">Transcription</span></div>
+          <img src="feature-read-aloud.png" alt="Reading view with the read-aloud playback bar" /></div>
+      </div>
+
+      <!-- FULL SIZE -->
+      <div class="feature reveal" id="fullsize">
+        <div class="f-text">
+          <div class="num">03 — Full-size Reading</div>
+          <h3>Or open it big and centred.</h3>
+          <p>When you just want to <em>read</em>, “View full size” lifts the transcription into a calm, centred column — the date in UK style, the title in display serif, nothing else in the way.</p>
+          <ul>
+            <li>Distraction-free, book-like reading</li>
+            <li>UK dates (DD/MM/YYYY) throughout</li>
+            <li>Light &amp; Dark mode, switchable from the toolbar</li>
+          </ul>
+        </div>
+        <div class="window"><div class="bar"><i></i><i></i><i></i><span class="t">Combray — Full size</span></div>
+          <img src="feature-full-size.png" alt="Full-size centred reading view" /></div>
+      </div>
+
+      <!-- BROWSE -->
+      <div class="feature rev reveal" id="browse">
+        <div class="f-text">
+          <div class="num">04 — Organise &amp; Search</div>
+          <h3>Browse by people, by years — or just search.</h3>
+          <p>Your archive organises itself. See everyone someone corresponded with, read a decade as a timeline, or find any letter by theme, period, writer, or a pair of people.</p>
+          <ul>
+            <li>Browse by <b>People</b> and by <b>Years</b></li>
+            <li>Full-text search with ranked, highlighted results</li>
+            <li>Pin up to three important letters to the top</li>
+          </ul>
+        </div>
+        <div class="window"><div class="bar"><i></i><i></i><i></i><span class="t">Combray</span></div>
+          <img src="screenshot.png" alt="The Combray sidebar: Add a letter, People, Years, Search" /></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EVERY MODE GRID -->
+  <section id="modes" style="background:linear-gradient(180deg,var(--paper),var(--paper-2))">
+    <div class="wrap">
+      <div class="sec-head reveal"><span class="kicker">Everything Combray does</span>
+        <h2>Every mode, one archive.</h2></div>
+      <div class="grid">
+        <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg></div>
+          <h4>iPhone capture</h4><p>A QR code links your phone; photograph pages and watch them upload — <em>Sent → Transcribing → Done</em>. No app to install.</p></div>
+        <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v14H7l-3 3z"/><path d="M8 9h8M8 13h5"/></svg></div>
+          <h4>Read a correspondence as a chat <span class="beta">beta</span></h4><p>The back-and-forth between two people, laid out like a modern messaging thread.</p></div>
+        <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h11l5 5v11H4z"/><path d="M8 13h8M8 17h8M8 9h4"/></svg></div>
+          <h4>Export to Word</h4><p>Save any letter as a <code>.docx</code> in the same beautiful font you read on screen.</p></div>
+        <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12l16-8-6 16-3-6z"/></svg></div>
+          <h4>Share to Gmail</h4><p>Open a Gmail draft with the letter already in it — one click.</p></div>
+        <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg></div>
+          <h4>Meta insights</h4><p>What the letter quietly reveals — likely location, relationship and its state, the writer's goals, their likely age and sex.</p></div>
+        <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.5 5 5.5.8-4 3.9 1 5.5L12 21l-5-2.3 1-5.5-4-3.9 5.5-.8z"/></svg></div>
+          <h4>Endearment → real name</h4><p>If your mother signs every letter “sweetness,” Combray works out who that is and records the real name.</p></div>
+        <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M5 21h14"/></svg></div>
+          <h4>Automatic updates</h4><p>Combray checks for new versions and updates itself quietly — your letters are never touched.</p></div>
+        <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16v13H4z"/><path d="M4 7l3-3h10l3 3"/><path d="M9 12h6"/></svg></div>
+          <h4>iCloud backup</h4><p>Copy every letter folder to iCloud Drive from the bottom-left, whenever you like.</p></div>
+        <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 100 18 9 9 0 000-18z"/><path d="M12 3v18M3 12h18"/></svg></div>
+          <h4>Light &amp; Dark</h4><p>A warm, literary look built on design tokens — re-themed in one place, day or night.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- YOUR DATA (dark band) -->
+  <section class="band">
+    <div class="wrap sec-head reveal" style="max-width:58ch">
+      <span class="kicker" style="color:var(--gold-bright)">Yours, on disk</span>
+      <h2>Your letters are yours.</h2>
+      <p class="sec-sub" style="max-width:none">Every letter is written to a plain, Finder-browsable folder on your Mac — the original page images, the transcription as text, and the details as JSON. Combray rebuilds itself from those files, so your archive outlives any version of the app. Nothing is locked in a database; nothing is held to ransom.</p>
+      <div class="folder reveal">
+~/…/Combray/Letters/<b>7</b>/<br>
+&nbsp;&nbsp;letter_7_page_1.jpg&nbsp;&nbsp;<span class="c">— the original page (open it in Preview)</span><br>
+&nbsp;&nbsp;letter.json&nbsp;&nbsp;<span class="c">— sender, date, summary, transcription</span><br>
+&nbsp;&nbsp;transcription.txt&nbsp;&nbsp;<span class="c">— the plain-text reading</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSTALL / TRIAL -->
+  <section id="install" class="install">
+    <div class="wrap">
+      <div class="sec-head reveal"><span class="kicker">Install</span>
+        <h2>Start reading tonight.</h2>
+        <p class="sec-sub">Combray is a Mac app. Download the installer, or use Homebrew if you'd rather.</p></div>
+
+      <div class="pricecard reveal">
+        <div class="price">Free <span>for 28 days</span></div>
+        <div class="trial">Then keep everything you've archived.</div>
+        <div class="cta-row" style="margin-top:30px">
+          <a class="btn btn-gold" href="https://github.com/Labern/Combray/releases/latest/download/Combray.pkg">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+            Download Combray.pkg
+          </a>
+        </div>
+        <div class="brew">
+          <code id="brewcmd">brew tap Labern/combray &amp;&amp; brew install --cask combray</code>
+          <button class="copy" id="copyBtn">Copy</button>
+        </div>
+        <p class="fine">macOS 13 or later · Apple Silicon · no account needed.<br>
+          First launch: right-click <b>Combray</b> in Applications → <b>Open</b> (it isn't notarized yet).</p>
+        <p class="soon"><b>Lifetime license</b> — coming soon.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="brand"><svg class="made" style="width:28px;height:24px"><use href="#madeleine"/></svg>Combray</div>
+  <p>Named for Proust's village of recovered memory — and yes, the icon is a madeleine.</p>
+  <p class="small">Made by <a href="https://github.com/Labern/Combray">Labern</a> · Mac only, for now · © 2026</p>
+</footer>
+
+<script>
+// nav background on scroll
+const nav=document.getElementById('nav');
+addEventListener('scroll',()=>nav.classList.toggle('scrolled',scrollY>24),{passive:true});
+// hero tilt settle
+addEventListener('scroll',()=>{const h=document.getElementById('heroShot'); if(h) h.classList.toggle('settled',scrollY>60);},{passive:true});
+// reveal on scroll
+const io=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}}),{threshold:.12});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+// copy brew
+const btn=document.getElementById('copyBtn');
+btn?.addEventListener('click',async()=>{
+  try{await navigator.clipboard.writeText('brew tap Labern/combray && brew install --cask combray');
+    btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent='Copy',1600);}catch(e){}
+});
+</script>
+</body>
+</html>

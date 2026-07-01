@@ -140,8 +140,12 @@ struct PlaybackBar: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 16) {
                 ctl(controller.isPlaying ? "pause.circle.fill" : "play.circle.fill", size: 28) { controller.toggle() }
-                ctl("gobackward.15", size: 19) { controller.skip(by: -15) }
-                ctl("goforward.15", size: 19) { controller.skip(by: 15) }
+
+                // position / total — left of the progress bar; fixedSize so it's never clipped
+                Text("\(SpeechSupport.clock(controller.elapsed)) / \(SpeechSupport.clock(controller.total))")
+                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize()
 
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
@@ -152,11 +156,9 @@ struct PlaybackBar: View {
                 .frame(height: 5)
                 .frame(maxWidth: .infinity)
 
-                // position / total — fixedSize so it can never be clipped away
-                Text("\(SpeechSupport.clock(controller.elapsed)) / \(SpeechSupport.clock(controller.total))")
-                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(Theme.ink)
-                    .fixedSize()
+                // skip controls after the progress bar
+                ctl("gobackward.15", size: 19) { controller.skip(by: -15) }
+                ctl("goforward.15", size: 19) { controller.skip(by: 15) }
             }
             .foregroundStyle(Theme.accentDeep)
 
