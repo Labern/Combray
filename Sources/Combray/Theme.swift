@@ -86,10 +86,12 @@ struct BigButtonStyle: ButtonStyle {
             )
             .shadow(color: filled ? Theme.accent.opacity(configuration.isPressed ? 0.16 : 0.30) : .clear,
                     radius: configuration.isPressed ? 5 : 10, y: configuration.isPressed ? 2 : 4)
-            .opacity(configuration.isPressed ? 0.85 : 1)
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .brightness(configuration.isPressed ? (filled ? -0.06 : 0) : 0)
+            .opacity(configuration.isPressed ? 0.80 : 1)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .contentShape(RoundedRectangle(cornerRadius: Theme.radius))
-            .animation(.easeOut(duration: configuration.isPressed ? 0 : 0.18), value: configuration.isPressed)
+            // nil animation on press-DOWN → the highlight registers instantly; ease only on release.
+            .animation(configuration.isPressed ? nil : .easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 
@@ -99,9 +101,11 @@ struct TapStyle: ButtonStyle {
     var scale: CGFloat = 0.94
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? 0.62 : 1)
+            .opacity(configuration.isPressed ? 0.55 : 1)
             .scaleEffect(configuration.isPressed ? scale : 1)
-            .animation(.easeOut(duration: configuration.isPressed ? 0 : 0.16), value: configuration.isPressed)
+            .contentShape(Rectangle())
+            // nil animation on press-DOWN → instant highlight; ease only on release.
+            .animation(configuration.isPressed ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }
 

@@ -11,6 +11,7 @@ final class SpeechController: NSObject, ObservableObject {
     @Published private(set) var spokenRange: NSRange?     // word being read, in `text` coordinates
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var total: TimeInterval = 0
+    @Published private(set) var voiceIsRobotic = false    // no natural voice installed → offer a download
 
     private let synth = AVSpeechSynthesizer()
     private var text = ""
@@ -30,8 +31,20 @@ final class SpeechController: NSObject, ObservableObject {
         synth.stopSpeaking(at: .immediate)
         text = trimmed
         voice = SpeechController.voice(forGender: gender)
+        voiceIsRobotic = SpeechSupport.voiceIsRobotic(qualityTier: SpeechController.tier(voice))
         total = SpeechSupport.estimateDuration(trimmed, wpm: wpm)
         charOffset = 0; elapsed = 0; spokenRange = nil; isPlaying = false
+    }
+
+    /// Open macOS's Spoken Content settings so the user can download a natural (enhanced/premium)
+    /// voice — the only way off the robotic compact voices. The app auto-adopts it once installed.
+    static func openVoiceSettings() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?SpokenContent",
+            "x-apple.systempreferences:com.apple.preference.universalaccess?SpokenContent",
+            "x-apple.systempreferences:com.apple.preference.universalaccess",
+        ]
+        for s in candidates { if let u = URL(string: s), NSWorkspace.shared.open(u) { return } }
     }
 
     func toggle() { isPlaying ? pause() : play() }
@@ -86,17 +99,20 @@ final class SpeechController: NSObject, ObservableObject {
         let english = AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix("en") }
             .filter { !$0.identifier.hasPrefix("com.apple.speech.synthesis.voice") }  // drop legacy/novelty voices
-        func tier(_ v: AVSpeechSynthesisVoice) -> Int {
-            switch v.quality { case .premium: return 2; case .enhanced: return 1; default: return 0 }
-        }
         func rank(_ v: AVSpeechSynthesisVoice) -> Int {
-            SpeechSupport.voiceRank(qualityTier: tier(v), language: v.language, name: v.name)
+            SpeechSupport.voiceRank(qualityTier: tier(v), language: v.language, name: v.name,
+                                    superCompact: v.identifier.contains("super-compact"))
         }
         let matching = english.filter { $0.gender == want }
         let pool = matching.isEmpty ? english : matching
         return pool.max { rank($0) < rank($1) }
             ?? AVSpeechSynthesisVoice(language: "en-GB")
             ?? AVSpeechSynthesisVoice(language: "en-US")
+    }
+
+    /// Voice-quality tier (2 premium / 1 enhanced / 0 default), for ranking and the robotic-voice hint.
+    static func tier(_ v: AVSpeechSynthesisVoice?) -> Int {
+        switch v?.quality { case .premium: return 2; case .enhanced: return 1; default: return 0 }
     }
 }
 
@@ -115,27 +131,47 @@ extension SpeechController: AVSpeechSynthesizerDelegate {
     }
 }
 
-/// The little play / skip / timer strip shown by the "Transcription" header.
+/// The read-aloud control strip: play/pause, ±15s, a progress bar, and a **position / total timer**
+/// that is always visible. Shown full-width beneath the "Transcription" header.
 struct PlaybackBar: View {
     @ObservedObject var controller: SpeechController
 
     var body: some View {
-        HStack(spacing: 12) {
-            ctl("gobackward.15") { controller.skip(by: -15) }
-            ctl(controller.isPlaying ? "pause.fill" : "play.fill", size: 20) { controller.toggle() }
-            ctl("goforward.15") { controller.skip(by: 15) }
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Theme.line)
-                    Capsule().fill(Theme.accent).frame(width: max(0, g.size.width * controller.progress))
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 16) {
+                ctl(controller.isPlaying ? "pause.circle.fill" : "play.circle.fill", size: 28) { controller.toggle() }
+                ctl("gobackward.15", size: 19) { controller.skip(by: -15) }
+                ctl("goforward.15", size: 19) { controller.skip(by: 15) }
+
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Theme.line)
+                        Capsule().fill(Theme.accent).frame(width: max(3, g.size.width * controller.progress))
+                    }
                 }
+                .frame(height: 5)
+                .frame(maxWidth: .infinity)
+
+                // position / total — fixedSize so it can never be clipped away
+                Text("\(SpeechSupport.clock(controller.elapsed)) / \(SpeechSupport.clock(controller.total))")
+                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize()
             }
-            .frame(width: 90, height: 4)
-            Text("\(SpeechSupport.clock(controller.elapsed)) / \(SpeechSupport.clock(controller.total))")
-                .font(.system(size: 13, weight: .medium).monospacedDigit())
+            .foregroundStyle(Theme.accentDeep)
+
+            // Only surfaces when there's no natural voice installed — the real fix for "the voice is awful".
+            if controller.voiceIsRobotic {
+                Button { SpeechController.openVoiceSettings() } label: {
+                    Label("The Mac's built-in voices sound robotic — click to install a natural one (free)",
+                          systemImage: "waveform.badge.plus")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(TapStyle())
                 .foregroundStyle(Theme.faint)
+                .help("Opens System Settings → Spoken Content. Download an English voice; the app uses it automatically.")
+            }
         }
-        .foregroundStyle(Theme.accentDeep)
     }
 
     private func ctl(_ icon: String, size: CGFloat = 15, _ action: @escaping () -> Void) -> some View {

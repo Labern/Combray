@@ -34,11 +34,14 @@ public enum SpeechSupport {
     }
 
     /// Rank a candidate voice so we play the *most natural* one installed instead of the tinny
-    /// compact default. Quality dominates (premium > enhanced > default), then a British accent
-    /// (the user is in the UK), then a small nudge for the voices that actually sound human.
-    /// `qualityTier`: 2 = premium, 1 = enhanced, 0 = default. Pure so it's unit-testable.
-    public static func voiceRank(qualityTier: Int, language: String, name: String) -> Int {
+    /// compact default. Quality dominates (premium > enhanced > default), then avoid super-compact
+    /// (the most robotic tier), then a British accent (the user is in the UK), then a small nudge for
+    /// the voices that actually sound human. `qualityTier`: 2 = premium, 1 = enhanced, 0 = default.
+    /// Pure so it's unit-testable.
+    public static func voiceRank(qualityTier: Int, language: String, name: String,
+                                 superCompact: Bool = false) -> Int {
         var s = qualityTier * 100
+        if superCompact { s -= 15 }                 // the most robotic tier — pick a plain compact over it
         if language == "en-GB" { s += 30 }
         else if language == "en-IE" || language == "en-AU" { s += 8 }
         let natural: Set<String> = ["daniel", "kate", "serena", "oliver", "stephanie", "jamie",
@@ -46,4 +49,9 @@ public enum SpeechSupport {
         if natural.contains(name.lowercased()) { s += 5 }
         return s
     }
+
+    /// True when the best voice we could pick is still only *default* quality (compact / super-compact)
+    /// — i.e. there is no natural (enhanced/premium) voice installed, so it will sound robotic until
+    /// the user downloads one. Drives the in-app "install a natural voice" hint.
+    public static func voiceIsRobotic(qualityTier: Int) -> Bool { qualityTier <= 0 }
 }

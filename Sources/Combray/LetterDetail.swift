@@ -281,10 +281,6 @@ struct LetterDetailView: View {
 
                 HStack(spacing: 16) {
                     Text("Transcription").font(Theme.label).foregroundStyle(Theme.faint)
-                    if !letter.transcription.isEmpty {
-                        PlaybackBar(controller: speech)
-                            .tip("Read the transcription aloud — play/pause, skip 15s, follow the words.")
-                    }
                     Spacer()
                     if !letter.transcription.isEmpty {
                         Button { c.fullSizeLetter = letter } label: {
@@ -295,6 +291,10 @@ struct LetterDetailView: View {
                         .foregroundStyle(Theme.accentDeep)
                         .tip("Open the transcription big and centred.")
                     }
+                }
+                if !letter.transcription.isEmpty {
+                    PlaybackBar(controller: speech)
+                        .tip("Read the transcription aloud — play/pause, skip 15s, follow the words.")
                 }
                 if isEditing {
                     TextEditor(text: $draft)

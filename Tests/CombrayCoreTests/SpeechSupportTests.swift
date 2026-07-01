@@ -54,4 +54,18 @@ final class SpeechSupportTests: XCTestCase {
         XCTAssertGreaterThan(enhancedGB, defaultGB)     // enhanced beats default
         XCTAssertGreaterThan(defaultGB, defaultUS)      // at equal quality, UK accent wins
     }
+
+    /// A plain compact voice is preferred over a super-compact one of the same accent (less robotic).
+    func testVoiceRankAvoidsSuperCompact() {
+        let compactGB = SpeechSupport.voiceRank(qualityTier: 0, language: "en-GB", name: "Daniel", superCompact: false)
+        let superGB = SpeechSupport.voiceRank(qualityTier: 0, language: "en-GB", name: "Daniel", superCompact: true)
+        XCTAssertGreaterThan(compactGB, superGB)
+    }
+
+    /// Only default-quality voices installed → flagged robotic (drives the "install a natural voice" hint).
+    func testVoiceIsRoboticOnlyForDefaultQuality() {
+        XCTAssertTrue(SpeechSupport.voiceIsRobotic(qualityTier: 0))
+        XCTAssertFalse(SpeechSupport.voiceIsRobotic(qualityTier: 1))   // enhanced
+        XCTAssertFalse(SpeechSupport.voiceIsRobotic(qualityTier: 2))   // premium
+    }
 }

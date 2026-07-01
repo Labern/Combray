@@ -1,11 +1,16 @@
 import SwiftUI
 import AppKit
 
-/// A selectable, **justified** multi-paragraph text view — SwiftUI's `Text` only does
-/// leading/center/trailing, so the letter (reflow) view drops down to an `NSTextView` for true
+/// A selectable, **justified** multi-paragraph text view. SwiftUI's `Text` only does
+/// leading/center/trailing, so the letter (reflow) view drops to an `NSTextView` for true
 /// justification. Paragraphs are separated by blank lines in `text`; `paragraphSpacing` is the gap
-/// between them so they read as distinct sections.
-struct JustifiedText: NSViewRepresentable {
+/// between them.
+///
+/// Crucially, the wrap width is driven **explicitly** from the SwiftUI-measured width (a
+/// `GeometryReader`) and hard-set on the text container — letting the `NSTextView` size itself made
+/// it fall back to its single-line width and spill off the side of the pane. Height self-reports back
+/// through a binding so the surrounding scroll layout reserves the right space.
+struct JustifiedText: View {
     let text: String
     var font: NSFont
     var color: NSColor
@@ -13,65 +18,76 @@ struct JustifiedText: NSViewRepresentable {
     var paragraphSpacing: CGFloat
     var highlight: NSRange? = nil          // the word being read aloud, highlighted live
 
-    /// Remembers the last real width SwiftUI proposed, so a measurement pass that proposes a nil /
-    /// infinite width still wraps to the pane instead of ballooning to the text's single-line width.
-    final class Coordinator { var lastWidth: CGFloat = 0 }
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    @State private var measuredHeight: CGFloat = 1
 
-    func makeNSView(context: Context) -> NSTextView {
-        let tv = NSTextView()
-        tv.isEditable = false
-        tv.isSelectable = true
-        tv.drawsBackground = false
-        tv.textContainerInset = .zero
-        tv.textContainer?.lineFragmentPadding = 0
-        tv.textContainer?.widthTracksTextView = true
-        tv.isVerticallyResizable = true
-        tv.isHorizontallyResizable = false
-        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        tv.minSize = .zero
-        // Defer to SwiftUI's width — don't let the text view force its wide single-line fitting size
-        // onto the layout (that's what pushed the transcription off the side of the pane).
-        tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        tv.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        return tv
-    }
-
-    func updateNSView(_ tv: NSTextView, context: Context) {
-        // Set the base text only when it actually changes, so per-word highlight updates don't reset
-        // scroll/selection — they just re-paint the background attribute.
-        if tv.string != text { tv.textStorage?.setAttributedString(attributed()) }
-        guard let storage = tv.textStorage else { return }
-        storage.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: storage.length))
-        if let h = highlight, h.location >= 0, h.location + h.length <= storage.length {
-            storage.addAttribute(.backgroundColor, value: Theme.accentNS.withAlphaComponent(0.35), range: h)
+    var body: some View {
+        GeometryReader { geo in
+            Rep(text: text, font: font, color: color, lineSpacing: lineSpacing,
+                paragraphSpacing: paragraphSpacing, highlight: highlight,
+                width: geo.size.width, height: $measuredHeight)
         }
+        .frame(height: measuredHeight)
     }
 
-    /// Report the height the text needs at the proposed width, so the SwiftUI layout reserves the
-    /// right space (no clipping, no overlap).
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView tv: NSTextView, context: Context) -> CGSize? {
-        // Use the proposed width when it's real; otherwise reuse the last real width so a nil /
-        // infinite proposal doesn't fall back to the text's (huge) single-line intrinsic width.
+    /// The AppKit text view. `width` is the exact wrap width measured by the SwiftUI `GeometryReader`;
+    /// `height` reports the laid-out height back up.
+    private struct Rep: NSViewRepresentable {
+        let text: String
+        let font: NSFont
+        let color: NSColor
+        let lineSpacing: CGFloat
+        let paragraphSpacing: CGFloat
+        let highlight: NSRange?
         let width: CGFloat
-        if let w = proposal.width, w.isFinite, w > 0 { width = w; context.coordinator.lastWidth = w }
-        else if context.coordinator.lastWidth > 0 { width = context.coordinator.lastWidth }
-        else { return nil }
-        guard let container = tv.textContainer, let lm = tv.layoutManager else { return nil }
-        container.size = CGSize(width: width, height: .greatestFiniteMagnitude)
-        lm.ensureLayout(for: container)
-        return CGSize(width: width, height: ceil(lm.usedRect(for: container).height))
-    }
+        @Binding var height: CGFloat
 
-    private func attributed() -> NSAttributedString {
-        let p = NSMutableParagraphStyle()
-        p.alignment = .justified
-        p.lineSpacing = lineSpacing
-        p.paragraphSpacing = paragraphSpacing
-        return NSAttributedString(string: text, attributes: [
-            .font: font,
-            .foregroundColor: color,
-            .paragraphStyle: p,
-        ])
+        func makeNSView(context: Context) -> NSTextView {
+            let tv = NSTextView()
+            tv.isEditable = false
+            tv.isSelectable = true
+            tv.drawsBackground = false
+            tv.textContainerInset = .zero
+            tv.textContainer?.lineFragmentPadding = 0
+            tv.textContainer?.widthTracksTextView = false   // WE set the width — don't track the frame
+            tv.isHorizontallyResizable = false
+            tv.isVerticallyResizable = true
+            return tv
+        }
+
+        func updateNSView(_ tv: NSTextView, context: Context) {
+            guard width > 0,
+                  let tc = tv.textContainer, let lm = tv.layoutManager, let storage = tv.textStorage
+            else { return }
+
+            if tv.string != text { storage.setAttributedString(attributed()) }
+
+            // Hard-constrain the wrap width to the SwiftUI-measured width.
+            tc.size = CGSize(width: width, height: .greatestFiniteMagnitude)
+
+            // Per-word read-aloud highlight (repaint only — cheap, keeps selection/scroll).
+            storage.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: storage.length))
+            if let h = highlight, h.location >= 0, h.location + h.length <= storage.length {
+                storage.addAttribute(.backgroundColor, value: Theme.accentNS.withAlphaComponent(0.35), range: h)
+            }
+
+            lm.ensureLayout(for: tc)
+            let needed = ceil(lm.usedRect(for: tc).height)
+            tv.frame = CGRect(x: 0, y: 0, width: width, height: needed)
+            if abs(needed - height) > 0.5 {
+                DispatchQueue.main.async { self.height = needed }
+            }
+        }
+
+        private func attributed() -> NSAttributedString {
+            let p = NSMutableParagraphStyle()
+            p.alignment = .justified
+            p.lineSpacing = lineSpacing
+            p.paragraphSpacing = paragraphSpacing
+            return NSAttributedString(string: text, attributes: [
+                .font: font,
+                .foregroundColor: color,
+                .paragraphStyle: p,
+            ])
+        }
     }
 }
