@@ -20,6 +20,7 @@ final class Updater: ObservableObject {
         case idle                          // nothing to do (current, or still checking)
         case downloading(version: String)  // a newer release is being fetched in the background
         case ready(version: String)        // staged and ready — click to restart, or it applies on quit
+        case installing(version: String)   // privileged install running — the password prompt is up
     }
 
     /// Shown briefly after the app has just been updated (auto OR manual) — "Updated to Vx.y.z".
@@ -29,6 +30,7 @@ final class Updater: ObservableObject {
     @Published private(set) var releaseSummary: String?   // "what's new" line from the release notes
     @Published var bubbleHidden = false     // user dismissed the "update available" bubble this run
     @Published var justUpdated: JustUpdated?              // non-nil → show the "Updated!" bubble
+    @Published var installError: String?    // a privileged install failed/was cancelled — shown in the bubble
 
     private let repo = "Labern/Combray"
     private var timer: Timer?
@@ -102,6 +104,7 @@ final class Updater: ObservableObject {
         guard installedAppURL != nil else { return }
         if case .downloading = state { return }   // already fetching
         if case .ready = state { return }          // already staged
+        if case .installing = state { return }     // mid-install
         guard let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest") else { return }
         var req = URLRequest(url: url)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -143,12 +146,63 @@ final class Updater: ObservableObject {
 
     // MARK: install
 
-    /// Apply the staged update now and relaunch (the bubble's action). Allowed to show the one
-    /// admin-password prompt needed for a root-owned (pkg/brew) install.
+    /// Apply the staged update now and relaunch (the bubble's action).
+    ///
+    /// User-owned installs: the seamless detached swap, then quit. Root-owned (pkg/Homebrew)
+    /// installs: run the privileged installer **while the app is still open**, so the macOS
+    /// password prompt is visibly tied to this click — the old flow prompted AFTER the app had
+    /// quit, and a password dialog appearing out of nowhere got missed or cancelled, the old
+    /// version reopened, and the bubble came back forever. On failure the bubble now says so
+    /// and the click can simply be retried.
     func installNow() {
-        guard case .ready = state, let app = stagedApp, let pkg = stagedPkg, let dest = installedAppURL else { return }
-        launchInstall(appSrc: app, pkg: pkg, dest: dest, relaunch: true, allowPrompt: true)
-        NSApp.terminate(nil)
+        guard case .ready(let version) = state, let app = stagedApp, let pkg = stagedPkg,
+              let dest = installedAppURL else { return }
+        installError = nil
+        let fm = FileManager.default
+        let writable = fm.isWritableFile(atPath: dest.path)
+            && fm.isWritableFile(atPath: dest.appendingPathComponent("Contents").path)
+        if writable {
+            launchInstall(appSrc: app, pkg: pkg, dest: dest, relaunch: true, allowPrompt: false)
+            NSApp.terminate(nil)
+            return
+        }
+        state = .installing(version: version)
+        let pkgPath = pkg.path
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let ok = Updater.runPrivilegedInstaller(pkgPath: pkgPath)
+            await MainActor.run { self?.privilegedInstallFinished(ok: ok, version: version) }
+        }
+    }
+
+    /// After the in-app privileged install: relaunch into the new version, or surface the failure
+    /// so the user can click again (retries were previously dead — the one-shot script guard ate them).
+    private func privilegedInstallFinished(ok: Bool, version: String) {
+        if ok, let dest = installedAppURL {
+            spawnRelaunch(dest: dest)
+            NSApp.terminate(nil)
+        } else {
+            state = .ready(version: version)
+            installError = "That didn’t finish — click again and enter your Mac password when asked."
+        }
+    }
+
+    /// `installer -pkg` via osascript so macOS shows its standard admin-password prompt,
+    /// synchronously, while the app is frontmost. Returns true when the install completed.
+    nonisolated private static func runPrivilegedInstaller(pkgPath: String) -> Bool {
+        let escaped = pkgPath.replacingOccurrences(of: "'", with: "'\\''")
+        let apple = "do shell script \"/usr/sbin/installer -pkg '\(escaped)' -target /\" with administrator privileges"
+        return run("/usr/bin/osascript", ["-e", apple]) == 0
+    }
+
+    /// Tiny detached helper: wait for this process to exit, then open the (now updated) app.
+    private func spawnRelaunch(dest: URL) {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let destQ = "'" + dest.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        let cmd = "nohup /bin/bash -c 'for i in $(seq 1 150); do kill -0 \(pid) 2>/dev/null || break; sleep 0.2; done; sleep 0.3; /usr/bin/open \(destQ)' >/dev/null 2>&1 &"
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", cmd]
+        try? p.run()
     }
 
     func hideBubble() { bubbleHidden = true }

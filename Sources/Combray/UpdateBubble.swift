@@ -19,6 +19,7 @@ struct UpdateBubble: View {
                 switch updater.state {
                 case .downloading(let v): card(version: v, downloading: true)
                 case .ready(let v):       card(version: v, downloading: false)
+                case .installing(let v):  installingCard(v)
                 case .idle:               EmptyView()
                 }
             }
@@ -62,6 +63,33 @@ struct UpdateBubble: View {
         .transition(.move(edge: .leading).combined(with: .opacity))
     }
 
+    /// Shown while the privileged installer runs (root-owned installs): the macOS password
+    /// prompt belongs to this moment — the card says so, and isn't clickable.
+    @ViewBuilder
+    private func installingCard(_ version: String) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 11) {
+                ProgressView().controlSize(.small).tint(Theme.accentDeep)
+                Text("Installing update").font(.system(size: 20, weight: .bold)).foregroundStyle(Theme.ink)
+                Text("V\(version)").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.accentDeep)
+                Spacer(minLength: 6)
+            }
+            Text("Enter your Mac password if asked — Combray will restart itself when it’s done.")
+                .font(.system(size: 15)).foregroundStyle(Theme.faint)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 18).padding(.horizontal, 22)
+        .frame(width: cardWidth, height: cardHeight, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 18).fill(Theme.surface)
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.accent, lineWidth: 2.5))
+                .shadow(color: Theme.accent.opacity(0.32), radius: 22, y: 7)
+        )
+        .transition(.move(edge: .leading).combined(with: .opacity))
+    }
+
     @ViewBuilder
     private func card(version: String, downloading: Bool) -> some View {
         let inner = VStack(alignment: .leading, spacing: 9) {
@@ -84,8 +112,13 @@ struct UpdateBubble: View {
                 .foregroundStyle(Theme.faint)
             }
 
-            Text(updater.releaseSummary ?? "A newer version of Combray is ready to install.")
-                .font(.system(size: 15)).foregroundStyle(Theme.faint)
+            // A failed/cancelled privileged install takes over the summary line so the user
+            // knows exactly what happened and that clicking again is the fix.
+            Text(updater.installError
+                    ?? updater.releaseSummary
+                    ?? "A newer version of Combray is ready to install.")
+                .font(.system(size: 15, weight: updater.installError == nil ? .regular : .semibold))
+                .foregroundStyle(updater.installError == nil ? Theme.faint : Theme.accentDeep)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .multilineTextAlignment(.leading)
