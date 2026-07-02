@@ -1,0 +1,10 @@
+#!/bin/bash
+# Hand the freshly-installed app to the logged-in user. Root-owned apps in /Applications
+# block Combray's silent in-place auto-update (the cause of the "update available but never
+# installs" loop) — user-owned, every future update swaps silently with no password.
+APP="$3/Applications/Combray.app"
+USER_NAME=$(/usr/bin/stat -f%Su /dev/console 2>/dev/null)
+if [ -d "$APP" ] && [ -n "$USER_NAME" ] && [ "$USER_NAME" != "root" ]; then
+  /usr/sbin/chown -R "$USER_NAME":staff "$APP" || true
+fi
+exit 0
