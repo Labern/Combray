@@ -603,6 +603,45 @@ view (beta)".
 **v0.13.1 (patch):** *attempted* fixes for the overflow + voice — **both inadequate** (see below).
 **v0.13.2 (patch):** the **real** fixes — overflow (explicit width), the always-visible playback timer,
 the "install a natural voice" path, and genuinely-instant button presses (all below).
+**v0.14.0 (minor, 2026-07-02, local install only — release freeze until Developer ID + billing):**
+rebuilt read-aloud engine, canonical People resolution, embedded neural voice (below).
+
+### Read-aloud rebuilt — pre-rendered audio (v0.14.0)
+- **Live `AVSpeechSynthesizer` playback is unreliable on macOS 26** — `speak`/`pauseSpeaking`/
+  `continueSpeaking` silently did nothing in the real app (user: play/pause/skip all dead). The fix:
+  **render to a file with `AVSpeechSynthesizer.write(_:toBufferCallback:)`, play with `AVAudioPlayer`.**
+  Verified on this Mac: 13.5s of audio renders in **0.28s** (~50× realtime), and the
+  `willSpeakRangeOfSpeechString` delegate **fires during the render** — accumulate frames-written at
+  each callback → exact per-word timestamps for the reading highlight. AVAudioPlayer transport is
+  bulletproof: instant pause, `currentTime` seek (±15s is a *true* seek), exact `duration` for the
+  timer. Render on a background queue + semaphore (no run loop needed for the callbacks).
+- **Anthropic has NO TTS API** (verified by live search 2026-07-01: even Anthropic's cookbook wires
+  ElevenLabs for TTS; Claude Code's /voice is dictation *input*). "Use Claude's voice" is impossible
+  for third-party apps — the honest options are Apple enhanced voices (manual download) or an
+  embedded neural TTS.
+- **Embedded neural voice (Piper)**: `NeuralVoice.swift` downloads the Piper engine (rhasspy/piper
+  release tarball, macOS arm64) + en_GB voices (HuggingFace rhasspy/piper-voices; male:
+  northern_english_male-medium, female: cori-medium, ~63MB each) into App Support/Combray/NeuralVoice,
+  strips quarantine + ad-hoc codesigns, renders WAV via `Process` (stdin text → --output_file), word
+  highlight via `SpeechSupport.proportionalWordTimes` (char-proportional — Piper has no word events).
+  System-voice fallback if the engine fails. **NOT yet runtime-verified** — executing the downloaded
+  binary needs the user's authorization (auto-mode blocked agent-chosen executables; asked user).
+
+### Canonical People resolution (v0.14.0)
+- Three layers, one rule — **one People entry per real person, and it's final**:
+  1. **Deterministic** (`PeopleResolver`, unit-tested): normalize (case/diacritics/parens/punct);
+     relation variants → the name the user searches by ("Mother"/"Mummy" → **"Mum"**, "Auntie Vera" →
+     "Aunt Vera"); endearment detection ("darling sweetness" is never an identity); unambiguous
+     first-name ⊂ full-name folding ("Eleanor" → "Eleanor Whitfield" iff exactly one candidate).
+  2. **Persistent alias store** (`PeopleAliases` → `people.json` at the archive ROOT — additive,
+     letter folders untouched, replayed on every rebuild → decisions survive reindexing forever).
+  3. **Claude pass** (`AnthropicClient.resolvePeople`): catalog of people + letter counts + hints
+     (metaRelationship/metaSuspectedWriter) + owner profile → merges with confidence; low-confidence
+     dropped; canonical for relations = "Mum (Vivienne)" style. Runs on launch + after each
+     transcription, fingerprint-gated (skips when the people set hasn't changed).
+- Names are canonicalized **on the way in** too: `findOrCreatePerson(named:resolver:)` (now
+  case-insensitive — the old exact match was a dupe factory) threads through `setParticipants` and
+  `applyTranscription`, so the To field shows "Mum", never "darling sweetness".
 
 ### Updater bug — root-owned installs (the big one)
 - **Symptom:** "Restart to update" reopened the *old* app. **Cause:** apps installed via `.pkg` or
