@@ -69,10 +69,10 @@ final class SpeechController: NSObject, ObservableObject {
         let female = prefersFemaleVoice
         let neural = NeuralVoice.shared
         if neural.isReady(female: female), !neuralFailed {
-            // Combray's own natural voice (Piper) — render the WAV off-main, then play.
-            let bin = neural.engineBinary, dir = neural.engineDir, model = neural.modelURL(female: female)
+            // Combray's own natural voice — render the WAV off-main, then play.
+            let bin = neural.engineBinary, vdir = neural.voiceDir(female: female)
             Task.detached(priority: .userInitiated) { [weak self] in
-                let url = NeuralVoice.render(text: t, engineBinary: bin, engineDir: dir, model: model)
+                let url = NeuralVoice.render(text: t, engineBinary: bin, voiceDir: vdir)
                 await MainActor.run { self?.neuralRenderDidFinish(url, forText: t) }
             }
             return
