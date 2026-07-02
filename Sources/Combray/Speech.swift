@@ -2,109 +2,87 @@ import SwiftUI
 import AVFoundation
 import CombrayCore
 
-/// Reads a transcription aloud. The audio is **pre-rendered to a file** (`AVSpeechSynthesizer.write`)
-/// and played with `AVAudioPlayer` — live `AVSpeechSynthesizer` playback proved unreliable on macOS 26
-/// (play/pause/skip silently doing nothing), whereas a rendered file gives bulletproof transport:
-/// instant play/pause, *true* seeking for ±15s, and an exact duration for the position timer.
-/// Word timings for the on-screen highlight are captured during the render — the synthesizer's
-/// `willSpeakRangeOfSpeechString` delegate fires as it writes, and the frames written so far give
-/// each word's timestamp. Rendering is ~50× realtime with system voices (a 3-minute letter ≈ 1s).
+/// Reads a transcription aloud. Two engines, one transport:
+///
+///  • **Neural (preferred)** — Combray's embedded Kokoro voice (see `NeuralVoice`). It renders at
+///    ~2× realtime, so the text is split into chunks (`SpeechSupport.chunkRanges`: small first
+///    chunk, then larger) and rendered **ahead of playback**: chunk 1 plays within a few seconds
+///    while the renderer keeps working ahead. Word highlight uses character-proportional timings.
+///
+///  • **System (fallback)** — `AVSpeechSynthesizer.write` to a single file (~50× realtime), with
+///    exact per-word timestamps from the render-time delegate. Used until the neural voice is
+///    installed, or if it fails.
+///
+/// Playback is always a real `AVAudioPlayer` — live `AVSpeechSynthesizer` playback proved silently
+/// broken on macOS 26 (play/pause/skip dead), whereas rendered audio gives instant pause, true
+/// seeking, and an exact timer.
 @MainActor
 final class SpeechController: NSObject, ObservableObject {
     @Published private(set) var isPlaying = false
-    @Published private(set) var isPreparing = false       // rendering the audio (spinner on play)
+    @Published private(set) var isPreparing = false       // rendering / buffering (spinner on play)
     @Published private(set) var spokenRange: NSRange?     // word being read, in `text` coordinates
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var total: TimeInterval = 0
-    @Published private(set) var voiceIsRobotic = false    // no natural voice installed → offer a download
+    @Published private(set) var voiceIsRobotic = false    // best available voice is the compact tier
 
     private var text = ""
     private var gender: String?
     private var player: AVAudioPlayer?
-    private var wordTimes: [(time: TimeInterval, range: NSRange)] = []
     private var tick: Timer?
-    private var rendering = false
-    private var audioURL: URL?
-    private var renderedVoiceID: String?
-    private var neuralFailed = false      // engine broke once → stick to the system voice this session
 
-    override init() {
-        super.init()
-        // If the user downloads a natural voice (Settings opens from the hint below) and comes back,
-        // adopt it: drop the old render so the next play uses the better voice.
-        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
-                                               object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.adoptBetterVoiceIfAvailable() }
-        }
+    // Neural chunked mode
+    private struct Chunk {
+        let range: NSRange                                     // absolute, in `text`
+        var url: URL?
+        var duration: TimeInterval = 0
+        var words: [(time: TimeInterval, range: NSRange)] = [] // times relative to chunk start
     }
+    private var chunks: [Chunk] = []
+    private var currentChunk = 0
+    private var pendingChunkStart: Int?                    // waiting for this chunk to finish rendering
+    private var renderGeneration = 0                       // bumped on stop/configure → stale renders discarded
+    private var neuralFailed = false                       // engine broke → stick to system voice this session
+
+    // System single-file mode
+    private var systemRendering = false
+    private var systemAudioURL: URL?
+    private var systemWords: [(time: TimeInterval, range: NSRange)] = []
+    private var usingSystemFile = false
+
+    override init() { super.init() }
 
     var progress: Double { total > 0 ? min(1, elapsed / total) : 0 }
     var hasText: Bool { !text.isEmpty }
+    var prefersFemaleVoice: Bool { SpeechSupport.wantsFemale(gender) }
 
-    /// Point the reader at a transcription. Resets playback; the audio renders on first play.
+    /// Point the reader at a transcription. Resets playback; audio renders on first play.
     func configure(text newText: String, gender newGender: String?) {
         let trimmed = newText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed != text || newGender != gender else { return }
         stop()
         text = trimmed
         gender = newGender
-        let voice = SpeechController.voice(forGender: newGender)
-        voiceIsRobotic = !NeuralVoice.shared.isReady(female: prefersFemaleVoice)
-            && SpeechSupport.voiceIsRobotic(qualityTier: SpeechController.tier(voice))
+        let sys = SpeechController.voice(forGender: newGender)
+        voiceIsRobotic = !NeuralVoice.shared.isReady()
+            && SpeechSupport.voiceIsRobotic(qualityTier: SpeechController.tier(sys))
         total = SpeechSupport.estimateDuration(trimmed, wpm: 165)   // placeholder until rendered
     }
-
-    /// Whether this letter's writer reads as female (drives which voice is used/downloaded).
-    var prefersFemaleVoice: Bool { SpeechSupport.wantsFemale(gender) }
 
     func toggle() { isPlaying ? pause() : play() }
 
     func play() {
         guard hasText else { return }
-        if let p = player { p.play(); isPlaying = true; startTick(); return }
-        guard !rendering else { return }
-        rendering = true
-        isPreparing = true
-        let t = text
-        let female = prefersFemaleVoice
-        let neural = NeuralVoice.shared
-        if neural.isReady(female: female), !neuralFailed {
-            // Combray's own natural voice — render the WAV off-main, then play.
-            let bin = neural.engineBinary, vdir = neural.voiceDir(female: female)
-            Task.detached(priority: .userInitiated) { [weak self] in
-                let url = NeuralVoice.render(text: t, engineBinary: bin, voiceDir: vdir)
-                await MainActor.run { self?.neuralRenderDidFinish(url, forText: t) }
+        if let p = player, !p.isPlaying { p.play(); isPlaying = true; startTick(); return }
+        guard player == nil, !isPreparing else { return }
+
+        if NeuralVoice.shared.isReady(), !neuralFailed {
+            startNeural()
+        } else {
+            if voiceIsRobotic, !NeuralVoice.shared.installing {
+                // Quietly fetch the natural voice for next time; play with the system voice now.
+                Task { await NeuralVoice.shared.install(); self.adoptNeuralIfReady() }
             }
-            return
-        }
-        // System voice. If it's the robotic compact tier, quietly fetch the natural voice for next time.
-        if voiceIsRobotic && !neural.installing {
-            Task { await neural.install(female: female); self.adoptNeuralIfReady() }
-        }
-        let voice = SpeechController.voice(forGender: gender)
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let result = SpeechController.render(text: t, voice: voice)
-            await MainActor.run { self?.renderDidFinish(result, forText: t, voiceID: voice?.identifier) }
-        }
-    }
-
-    /// Explicit "get the natural voice" action from the playback bar.
-    func upgradeVoice() {
-        let female = prefersFemaleVoice
-        Task { await NeuralVoice.shared.install(female: female); self.adoptNeuralIfReady() }
-    }
-
-    /// Once the natural voice is installed, drop any robotic render so the next play uses it.
-    private func adoptNeuralIfReady() {
-        guard NeuralVoice.shared.isReady(female: prefersFemaleVoice) else { return }
-        voiceIsRobotic = false
-        if renderedVoiceID != "neural", !isPlaying, !rendering {
-            player = nil
-            removeAudioFile()
-            wordTimes = []
-            elapsed = 0
-            spokenRange = nil
-            renderedVoiceID = nil
+            startSystem()
         }
     }
 
@@ -116,47 +94,182 @@ final class SpeechController: NSObject, ObservableObject {
     }
 
     func stop() {
+        renderGeneration += 1
         player?.stop()
         player = nil
         isPlaying = false
         isPreparing = false
-        rendering = false
         stopTick()
         spokenRange = nil
         elapsed = 0
-        wordTimes = []
-        removeAudioFile()
+        for c in chunks { if let u = c.url { try? FileManager.default.removeItem(at: u) } }
+        chunks = []
+        currentChunk = 0
+        pendingChunkStart = nil
+        systemRendering = false
+        usingSystemFile = false
+        systemWords = []
+        if let u = systemAudioURL { try? FileManager.default.removeItem(at: u) }
+        systemAudioURL = nil
     }
 
-    /// Jump forward/back by `seconds` — a real seek on the rendered audio.
+    /// Jump forward/back by `seconds` — a true seek within the rendered audio.
     func skip(by seconds: TimeInterval) {
-        guard let p = player else { if hasText { play() }; return }   // not rendered yet → start it
-        p.currentTime = max(0, min(max(0, p.duration - 0.05), p.currentTime + seconds))
-        syncNow()
+        guard player != nil || !chunks.isEmpty else { if hasText { play() }; return }
+        seek(toTime: currentTime() + seconds)
     }
 
     /// Seek to a fraction of the letter (tap/drag on the progress bar).
     func seek(toFraction f: Double) {
-        guard let p = player, p.duration > 0 else { return }
-        p.currentTime = max(0, min(p.duration - 0.05, p.duration * max(0, min(1, f))))
-        syncNow()
+        guard total > 0 else { return }
+        seek(toTime: total * max(0, min(1, f)))
     }
 
-    // MARK: render
+    /// Explicit "get the natural voice" action from the playback bar.
+    func upgradeVoice() {
+        Task { await NeuralVoice.shared.install(); self.adoptNeuralIfReady() }
+    }
 
-    private func renderDidFinish(_ result: RenderResult?, forText t: String, voiceID: String?) {
-        rendering = false
+    // MARK: - Neural chunked engine
+
+    private func startNeural() {
+        isPreparing = true
+        usingSystemFile = false
+        renderGeneration += 1
+        let gen = renderGeneration
+        let ranges = SpeechSupport.chunkRanges(text: text)
+        guard !ranges.isEmpty else { isPreparing = false; return }
+        chunks = ranges.map { Chunk(range: $0) }
+        currentChunk = 0
+        pendingChunkStart = 0
+        let t = text as NSString
+        let female = prefersFemaleVoice
+        let bin = NeuralVoice.shared.engineBinary
+        let mdir = NeuralVoice.shared.modelDir
+        Task.detached(priority: .userInitiated) { [weak self] in
+            for (i, r) in ranges.enumerated() {
+                let alive = await MainActor.run { [weak self] in self?.renderGeneration == gen }
+                guard alive else { return }
+                let url = NeuralVoice.render(text: t.substring(with: r), female: female,
+                                             engineBinary: bin, modelDir: mdir)
+                let keepGoing = await MainActor.run { [weak self] in
+                    self?.commitChunkRender(index: i, url: url, generation: gen) ?? false
+                }
+                guard keepGoing else { return }
+            }
+        }
+    }
+
+    /// Store a finished chunk render; start playback if it's the one we're waiting on.
+    /// Returns false when the loop should stop (stale generation or engine failure).
+    private func commitChunkRender(index: Int, url: URL?, generation: Int) -> Bool {
+        guard generation == renderGeneration, index < chunks.count else {
+            if let url { try? FileManager.default.removeItem(at: url) }
+            return false
+        }
+        guard let url, let probe = try? AVAudioPlayer(contentsOf: url) else {
+            // Engine failed. If nothing has played yet, fall back to the system voice seamlessly.
+            neuralFailed = true
+            if index == 0 {
+                chunks = []
+                pendingChunkStart = nil
+                isPreparing = false
+                startSystem()
+            } else {
+                pendingChunkStart = nil     // play what we have; stop advancing at the gap
+            }
+            return false
+        }
+        chunks[index].url = url
+        chunks[index].duration = probe.duration
+        let ns = text as NSString
+        let sub = ns.substring(with: chunks[index].range)
+        chunks[index].words = SpeechSupport.proportionalWordTimes(text: sub, duration: probe.duration)
+            .map { (time: $0.time, range: NSRange(location: chunks[index].range.location + $0.range.location,
+                                                  length: $0.range.length)) }
+        refreshTotal()
+        if pendingChunkStart == index {
+            pendingChunkStart = nil
+            startChunk(index, at: 0)
+        }
+        return true
+    }
+
+    private func startChunk(_ i: Int, at offset: TimeInterval) {
+        guard i < chunks.count, let url = chunks[i].url, let p = try? AVAudioPlayer(contentsOf: url) else { return }
+        currentChunk = i
+        p.delegate = self
+        p.prepareToPlay()
+        p.currentTime = max(0, min(offset, max(0, p.duration - 0.05)))
+        player = p
+        p.play()
+        isPlaying = true
         isPreparing = false
-        guard text == t else {                       // letter changed while rendering → discard
+        startTick()
+    }
+
+    private func advancePastCurrentChunk() {
+        let next = currentChunk + 1
+        player = nil
+        if usingSystemFile || chunks.isEmpty || next >= chunks.count {
+            // Finished the letter (or the single system file): rest at the start, ready to replay.
+            isPlaying = false
+            stopTick()
+            spokenRange = nil
+            elapsed = 0
+            currentChunk = 0
+            if !chunks.isEmpty, chunks[0].url != nil {
+                // keep renders — replay is instant via play()
+                if let u = chunks[0].url, let p = try? AVAudioPlayer(contentsOf: u) {
+                    p.delegate = self; p.prepareToPlay(); player = p; player?.pause()
+                }
+            } else if let u = systemAudioURL, let p = try? AVAudioPlayer(contentsOf: u) {
+                p.delegate = self; p.prepareToPlay(); player = p; player?.pause()
+            }
+            return
+        }
+        if chunks[next].url != nil {
+            startChunk(next, at: 0)
+        } else {
+            // Renderer hasn't caught up — buffer.
+            isPlaying = true                 // conceptually still playing; spinner shows
+            isPreparing = true
+            pendingChunkStart = next
+        }
+    }
+
+    // MARK: - System single-file engine (fallback)
+
+    private func startSystem() {
+        guard !systemRendering else { return }
+        if let u = systemAudioURL, let p = try? AVAudioPlayer(contentsOf: u) {
+            usingSystemFile = true
+            p.delegate = self; p.prepareToPlay(); player = p
+            p.play(); isPlaying = true; startTick()
+            return
+        }
+        systemRendering = true
+        isPreparing = true
+        let t = text
+        let voice = SpeechController.voice(forGender: gender)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let result = SpeechController.renderSystem(text: t, voice: voice)
+            await MainActor.run { self?.systemRenderDidFinish(result, forText: t) }
+        }
+    }
+
+    private func systemRenderDidFinish(_ result: SystemRender?, forText t: String) {
+        systemRendering = false
+        isPreparing = false
+        guard text == t else {
             if let url = result?.url { try? FileManager.default.removeItem(at: url) }
             return
         }
         guard let r = result, let p = try? AVAudioPlayer(contentsOf: r.url) else { return }
-        removeAudioFile()
-        audioURL = r.url
-        wordTimes = r.words
+        systemAudioURL = r.url
+        systemWords = r.words
+        usingSystemFile = true
         total = r.duration
-        renderedVoiceID = voiceID
         p.delegate = self
         p.prepareToPlay()
         player = p
@@ -165,43 +278,15 @@ final class SpeechController: NSObject, ObservableObject {
         startTick()
     }
 
-    /// Completion for the neural (Piper) render: word highlight uses character-proportional
-    /// timings (the engine gives no per-word callbacks); on failure, fall back to the system voice.
-    private func neuralRenderDidFinish(_ url: URL?, forText t: String) {
-        rendering = false
-        isPreparing = false
-        guard text == t else {
-            if let url { try? FileManager.default.removeItem(at: url) }
-            return
-        }
-        guard let url, let p = try? AVAudioPlayer(contentsOf: url) else {
-            neuralFailed = true
-            play()                        // retry via the system-voice path
-            return
-        }
-        removeAudioFile()
-        audioURL = url
-        wordTimes = SpeechSupport.proportionalWordTimes(text: t, duration: p.duration)
-        total = p.duration
-        renderedVoiceID = "neural"
-        voiceIsRobotic = false
-        p.delegate = self
-        p.prepareToPlay()
-        player = p
-        p.play()
-        isPlaying = true
-        startTick()
-    }
-
-    private struct RenderResult {
+    private struct SystemRender {
         let url: URL
         let words: [(time: TimeInterval, range: NSRange)]
         let duration: TimeInterval
     }
 
-    /// Render `text` to a CAF file off the main thread, capturing (timestamp, word-range) pairs.
-    /// Blocking — call from a detached task. Verified on macOS 26: ~50× realtime, delegate fires.
-    nonisolated private static func render(text: String, voice: AVSpeechSynthesisVoice?) -> RenderResult? {
+    /// Render with `AVSpeechSynthesizer.write` off the main thread, capturing per-word timestamps
+    /// (the delegate fires during the render; frames-written at each callback = the word's time).
+    nonisolated private static func renderSystem(text: String, voice: AVSpeechSynthesisVoice?) -> SystemRender? {
         final class Box: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
             let lock = NSLock()
             var frames = 0
@@ -215,7 +300,6 @@ final class SpeechController: NSObject, ObservableObject {
             func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) { done.signal() }
             func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel u: AVSpeechUtterance) { done.signal() }
         }
-
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("combray-readaloud-\(UUID().uuidString).caf")
         let synth = AVSpeechSynthesizer()
@@ -236,7 +320,7 @@ final class SpeechController: NSObject, ObservableObject {
             box.frames += Int(pcm.frameLength)
             box.lock.unlock()
         }
-        guard box.done.wait(timeout: .now() + 300) == .success else {   // cap: ~4h of audio headroom
+        guard box.done.wait(timeout: .now() + 300) == .success else {
             try? FileManager.default.removeItem(at: url); return nil
         }
         box.lock.lock()
@@ -244,17 +328,60 @@ final class SpeechController: NSObject, ObservableObject {
         let rate = box.rate
         let words = box.words.map { (time: Double($0.0) / max(rate, 1), range: $0.1) }
         box.lock.unlock()
-        file = nil                                    // close the file before playback opens it
+        file = nil
         guard frames > 0, rate > 0 else { try? FileManager.default.removeItem(at: url); return nil }
-        return RenderResult(url: url, words: words, duration: Double(frames) / rate)
+        return SystemRender(url: url, words: words, duration: Double(frames) / rate)
     }
 
-    private func removeAudioFile() {
-        if let u = audioURL { try? FileManager.default.removeItem(at: u) }
-        audioURL = nil
+    // MARK: - Shared transport
+
+    /// Absolute position across chunks (or within the single system file).
+    private func currentTime() -> TimeInterval {
+        let inChunk = player?.currentTime ?? 0
+        guard !usingSystemFile, !chunks.isEmpty else { return inChunk }
+        return chunks.prefix(currentChunk).reduce(0) { $0 + $1.duration } + inChunk
     }
 
-    // MARK: position tick (drives the timer + word highlight from true playback time)
+    private func seek(toTime target: TimeInterval) {
+        if usingSystemFile || chunks.isEmpty {
+            guard let p = player, p.duration > 0 else { return }
+            p.currentTime = max(0, min(p.duration - 0.05, target))
+            syncNow()
+            return
+        }
+        // Across chunks: clamp into the rendered region, find (chunk, offset).
+        var renderedEnd: TimeInterval = 0
+        for c in chunks { guard c.url != nil else { break }; renderedEnd += c.duration }
+        let t = max(0, min(max(0, renderedEnd - 0.1), target))
+        var acc: TimeInterval = 0
+        for (i, c) in chunks.enumerated() {
+            guard c.url != nil else { break }
+            if t < acc + c.duration || i == chunks.count - 1 {
+                let wasPlaying = isPlaying
+                player?.stop()
+                startChunk(i, at: t - acc)
+                if !wasPlaying { player?.pause(); isPlaying = false; stopTick() }
+                syncNow()
+                return
+            }
+            acc += c.duration
+        }
+    }
+
+    /// Total = rendered durations + a character-proportional estimate for the unrendered tail.
+    private func refreshTotal() {
+        guard !chunks.isEmpty else { return }
+        var rendered: TimeInterval = 0
+        var renderedChars = 0
+        var remainingChars = 0
+        for c in chunks {
+            if c.url != nil { rendered += c.duration; renderedChars += c.range.length }
+            else { remainingChars += c.range.length }
+        }
+        if renderedChars > 0 {
+            total = rendered + rendered / Double(renderedChars) * Double(remainingChars)
+        }
+    }
 
     private func startTick() {
         stopTick()
@@ -262,23 +389,35 @@ final class SpeechController: NSObject, ObservableObject {
             Task { @MainActor in self?.syncNow() }
         }
     }
-
     private func stopTick() { tick?.invalidate(); tick = nil }
 
     private func syncNow() {
         guard let p = player else { return }
-        elapsed = p.currentTime
-        spokenRange = isPlaying || p.isPlaying
-            ? wordTimes.last(where: { $0.time <= elapsed + 0.05 })?.range
-            : spokenRange
+        elapsed = currentTime()
+        let words = usingSystemFile || chunks.isEmpty
+            ? systemWords
+            : (currentChunk < chunks.count ? chunks[currentChunk].words : [])
+        spokenRange = words.last(where: { $0.time <= p.currentTime + 0.05 })?.range ?? spokenRange
     }
 
-    // MARK: voice selection
+    /// Once the natural voice is installed, drop any robotic render so the next play uses it.
+    private func adoptNeuralIfReady() {
+        guard NeuralVoice.shared.isReady() else { return }
+        voiceIsRobotic = false
+        if usingSystemFile, !isPlaying {
+            player = nil
+            usingSystemFile = false
+            systemWords = []
+            if let u = systemAudioURL { try? FileManager.default.removeItem(at: u) }
+            systemAudioURL = nil
+            elapsed = 0
+            spokenRange = nil
+        }
+    }
 
-    /// Pick the most natural English voice for the writer's sex (defaults to male). We rank the
-    /// *installed* voices by quality (premium > enhanced > default) and prefer a UK accent —
-    /// the stock Mac only has robotic compact voices, so the hint below guides a one-time download
-    /// (System Settings → Accessibility → Spoken Content) and the app adopts it automatically.
+    // MARK: - System voice selection
+
+    /// The best installed Apple voice for the writer's sex (fallback engine only).
     static func voice(forGender gender: String?) -> AVSpeechSynthesisVoice? {
         let want: AVSpeechSynthesisVoiceGender = SpeechSupport.wantsFemale(gender) ? .female : .male
         let english = AVSpeechSynthesisVoice.speechVoices()
@@ -295,39 +434,15 @@ final class SpeechController: NSObject, ObservableObject {
             ?? AVSpeechSynthesisVoice(language: "en-US")
     }
 
-    /// Voice-quality tier (2 premium / 1 enhanced / 0 default), for ranking and the robotic-voice hint.
+    /// Voice-quality tier (2 premium / 1 enhanced / 0 default), for ranking and the robotic hint.
     static func tier(_ v: AVSpeechSynthesisVoice?) -> Int {
         switch v?.quality { case .premium: return 2; case .enhanced: return 1; default: return 0 }
-    }
-
-    /// On returning to the app (e.g. after downloading a system voice): re-evaluate the best voice;
-    /// if a better one is available, drop the old render so the next play uses it.
-    private func adoptBetterVoiceIfAvailable() {
-        guard hasText else { return }
-        if NeuralVoice.shared.isReady(female: prefersFemaleVoice) { adoptNeuralIfReady(); return }
-        let best = SpeechController.voice(forGender: gender)
-        voiceIsRobotic = SpeechSupport.voiceIsRobotic(qualityTier: SpeechController.tier(best))
-        if let id = renderedVoiceID, id != "neural", let newID = best?.identifier, id != newID,
-           !isPlaying, !rendering {
-            player = nil
-            removeAudioFile()
-            wordTimes = []
-            elapsed = 0
-            spokenRange = nil
-            renderedVoiceID = nil
-        }
     }
 }
 
 extension SpeechController: AVAudioPlayerDelegate {
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in
-            self.isPlaying = false
-            self.stopTick()
-            self.spokenRange = nil
-            self.elapsed = 0
-            self.player?.currentTime = 0        // keep the render — replay is instant
-        }
+        Task { @MainActor in self.advancePastCurrentChunk() }
     }
 }
 
@@ -375,7 +490,7 @@ struct PlaybackBar: View {
             if neural.installing {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Getting Combray’s natural voice — one-time, ~85 MB. It’ll be used automatically.")
+                    Text("Getting Combray’s natural voice — one-time, ~120 MB. It’ll be used automatically.")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundStyle(Theme.faint)
@@ -389,7 +504,7 @@ struct PlaybackBar: View {
                 }
                 .buttonStyle(TapStyle())
                 .foregroundStyle(Theme.faint)
-                .help("Downloads a natural neural voice (~85 MB) into Combray itself — no system settings, used automatically from then on.")
+                .help("Downloads a natural neural voice (~120 MB) into Combray itself — no system settings, used automatically from then on.")
             }
         }
     }

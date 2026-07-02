@@ -1,16 +1,19 @@
 import SwiftUI
 import CombrayCore
 
-/// Combray's embedded natural voice: the **sherpa-onnx** TTS engine plus British Piper voice
-/// models, downloaded once into `Application Support/Combray/NeuralVoice/` (~90 MB), then fully
-/// local and offline. This exists because (a) Apple's stock voices are robotic compact models and
-/// the good ones require a manual System Settings download, and (b) Anthropic exposes **no TTS
-/// API** — the voice in the Claude apps is not available to third-party software.
+/// Combray's embedded natural voice: the **sherpa-onnx** TTS engine running the **Kokoro** model
+/// (with real British voices), downloaded once into `Application Support/Combray/NeuralVoice/`
+/// (~120 MB), then fully local and offline. This exists because (a) Apple's stock voices are
+/// robotic compact models and the good ones need a manual System Settings download, and
+/// (b) Anthropic exposes **no TTS API** — the Claude apps' voice isn't available to third parties.
 ///
-/// Why sherpa-onnx and not Piper's own binaries: rhasspy's macOS release tarballs are broken
-/// (x86_64 binaries in the "aarch64" tarball, referencing dylibs that aren't shipped). k2-fsa's
-/// sherpa-onnx ships correct arm64 binaries and runs the same Piper voices — verified end-to-end
-/// on this machine (9.5s of speech rendered in 1.7s).
+/// Engine notes, verified end-to-end on this machine:
+///  • rhasspy/piper's own macOS tarballs are broken (x86_64 binaries in the "aarch64" tarball,
+///    missing dylibs) — k2-fsa/sherpa-onnx ships correct arm64 binaries.
+///  • Kokoro int8 renders ~1.9× realtime with 8 threads — fine for chunked render-ahead
+///    (the SpeechController streams chunks), not for whole-letter pre-render.
+///  • Speaker ids (Kokoro v0.19, documented order): 7 = bf_emma (British female),
+///    9 = bm_george (British male).
 @MainActor
 final class NeuralVoice: ObservableObject {
     static let shared = NeuralVoice()
@@ -29,36 +32,30 @@ final class NeuralVoice: ObservableObject {
     private static var engineTarURL: String {
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/v\(engineVersion)/\(engineDirName).tar.bz2"
     }
-    /// Package names differ per voice (and so do the .onnx filenames inside — located dynamically).
-    private static func voicePackage(female: Bool) -> String {
-        female ? "vits-piper-en_GB-southern_english_female_medium"
-               : "vits-piper-en_GB-northern_english_male-medium"
-    }
-    private static func voiceTarURL(female: Bool) -> String {
-        "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/\(voicePackage(female: female)).tar.bz2"
+    private static let modelDirName = "kokoro-int8-en-v0_19"
+    private static var modelTarURL: String {
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/\(modelDirName).tar.bz2"
     }
 
     var engineBinary: URL {
         dir.appendingPathComponent("\(Self.engineDirName)/bin/sherpa-onnx-offline-tts")
     }
-    func voiceDir(female: Bool) -> URL {
-        dir.appendingPathComponent(Self.voicePackage(female: female), isDirectory: true)
-    }
-    nonisolated static func modelFile(inVoiceDir d: URL) -> URL? {
-        (try? FileManager.default.contentsOfDirectory(at: d, includingPropertiesForKeys: nil))?
-            .first { $0.pathExtension == "onnx" }
+    var modelDir: URL { dir.appendingPathComponent(Self.modelDirName, isDirectory: true) }
+
+    /// Kokoro speaker for the writer's sex — British voices.
+    nonisolated static func speakerID(female: Bool) -> Int { female ? 7 : 9 }   // bf_emma / bm_george
+
+    /// True when the engine and the Kokoro model are on disk, ready to speak (either sex).
+    func isReady() -> Bool {
+        let fm = FileManager.default
+        return fm.isExecutableFile(atPath: engineBinary.path)
+            && fm.fileExists(atPath: modelDir.appendingPathComponent("model.int8.onnx").path)
+            && fm.fileExists(atPath: modelDir.appendingPathComponent("voices.bin").path)
+            && fm.fileExists(atPath: modelDir.appendingPathComponent("tokens.txt").path)
     }
 
-    /// True when the engine and the requested voice are on disk, ready to speak.
-    func isReady(female: Bool) -> Bool {
-        let d = voiceDir(female: female)
-        return FileManager.default.isExecutableFile(atPath: engineBinary.path)
-            && Self.modelFile(inVoiceDir: d) != nil
-            && FileManager.default.fileExists(atPath: d.appendingPathComponent("tokens.txt").path)
-    }
-
-    /// Fetch the engine (once) and the voice for this writer (once per sex). Safe to re-call.
-    func install(female: Bool) async {
+    /// Fetch the engine + model (once, ~120 MB total). Safe to re-call.
+    func install() async {
         guard !installing else { return }
         installing = true
         progress = 0
@@ -67,14 +64,13 @@ final class NeuralVoice: ObservableObject {
         do {
             let fm = FileManager.default
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-
             if !fm.isExecutableFile(atPath: engineBinary.path) {
                 try await fetchAndUntar(Self.engineTarURL, tarName: "engine.tar.bz2")
                 try? run("/bin/chmod", ["-R", "+x", dir.appendingPathComponent("\(Self.engineDirName)/bin").path])
             }
-            progress = 0.5
-            if Self.modelFile(inVoiceDir: voiceDir(female: female)) == nil {
-                try await fetchAndUntar(Self.voiceTarURL(female: female), tarName: "voice.tar.bz2")
+            progress = 0.3
+            if !fm.fileExists(atPath: modelDir.appendingPathComponent("model.int8.onnx").path) {
+                try await fetchAndUntar(Self.modelTarURL, tarName: "model.tar.bz2")
             }
             // Downloaded executables must be runnable: strip any quarantine flags in one pass.
             try? run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", dir.path])
@@ -85,15 +81,18 @@ final class NeuralVoice: ObservableObject {
     }
 
     /// Render `text` to a WAV with the neural voice. Blocking (runs the engine) — call detached.
-    nonisolated static func render(text: String, engineBinary: URL, voiceDir: URL) -> URL? {
-        guard let model = modelFile(inVoiceDir: voiceDir) else { return nil }
+    nonisolated static func render(text: String, female: Bool, engineBinary: URL, modelDir: URL) -> URL? {
         let out = FileManager.default.temporaryDirectory
             .appendingPathComponent("combray-neural-\(UUID().uuidString).wav")
+        let threads = max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2))
         let p = Process()
         p.executableURL = engineBinary
-        p.arguments = ["--vits-model=\(model.path)",
-                       "--vits-tokens=\(voiceDir.appendingPathComponent("tokens.txt").path)",
-                       "--vits-data-dir=\(voiceDir.appendingPathComponent("espeak-ng-data").path)",
+        p.arguments = ["--num-threads=\(threads)",
+                       "--kokoro-model=\(modelDir.appendingPathComponent("model.int8.onnx").path)",
+                       "--kokoro-voices=\(modelDir.appendingPathComponent("voices.bin").path)",
+                       "--kokoro-tokens=\(modelDir.appendingPathComponent("tokens.txt").path)",
+                       "--kokoro-data-dir=\(modelDir.appendingPathComponent("espeak-ng-data").path)",
+                       "--sid=\(speakerID(female: female))",
                        "--output-filename=\(out.path)",
                        text]
         p.standardOutput = Pipe(); p.standardError = Pipe()

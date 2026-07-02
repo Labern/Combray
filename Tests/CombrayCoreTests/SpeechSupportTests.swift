@@ -68,4 +68,43 @@ final class SpeechSupportTests: XCTestCase {
         XCTAssertFalse(SpeechSupport.voiceIsRobotic(qualityTier: 1))   // enhanced
         XCTAssertFalse(SpeechSupport.voiceIsRobotic(qualityTier: 2))   // premium
     }
+
+    /// Chunk ranges tile the whole string in order — every character in exactly one chunk.
+    func testChunkRangesTileTheString() {
+        let text = String(repeating: "One sentence here. Another follows on! A third, question? ", count: 20)
+        let ranges = SpeechSupport.chunkRanges(text: text)
+        XCTAssertGreaterThan(ranges.count, 1)
+        var pos = 0
+        for r in ranges {
+            XCTAssertEqual(r.location, pos, "chunks must be contiguous")
+            pos += r.length
+        }
+        XCTAssertEqual(pos, (text as NSString).length, "chunks must cover the full text")
+    }
+
+    /// The first chunk is small (fast start); later chunks may be bigger (efficient).
+    func testFirstChunkIsSmall() {
+        let text = String(repeating: "A short sentence goes right here. ", count: 40)
+        let ranges = SpeechSupport.chunkRanges(text: text, firstMax: 140, restMax: 480)
+        XCTAssertLessThanOrEqual(ranges[0].length, 170)      // ~firstMax, sentence-rounded
+        XCTAssertTrue(ranges.dropFirst().contains { $0.length > 170 })
+    }
+
+    /// A single monster sentence is hard-split on word boundaries rather than left whole.
+    func testLongSentenceIsHardSplit() {
+        let text = String(repeating: "word ", count: 300)     // 1500 chars, no sentence breaks
+        let ranges = SpeechSupport.chunkRanges(text: text, firstMax: 140, restMax: 480)
+        XCTAssertGreaterThan(ranges.count, 2)
+        XCTAssertTrue(ranges.allSatisfy { $0.length <= 481 })
+        XCTAssertEqual(ranges.reduce(0) { $0 + $1.length }, (text as NSString).length)
+    }
+
+    /// Proportional word times start at zero, are monotonic, and stay within the duration.
+    func testProportionalWordTimes() {
+        let times = SpeechSupport.proportionalWordTimes(text: "the quick brown fox jumps", duration: 10)
+        XCTAssertEqual(times.count, 5)
+        XCTAssertEqual(times.first?.time ?? -1, 0, accuracy: 0.001)
+        XCTAssertTrue(zip(times, times.dropFirst()).allSatisfy { $0.time <= $1.time })
+        XCTAssertLessThan(times.last!.time, 10)
+    }
 }

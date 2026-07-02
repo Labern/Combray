@@ -55,6 +55,68 @@ public enum SpeechSupport {
     /// the user downloads one. Drives the in-app "install a natural voice" hint.
     public static func voiceIsRobotic(qualityTier: Int) -> Bool { qualityTier <= 0 }
 
+    /// Splits `text` into chunk ranges for streamed neural rendering: a SMALL first chunk (so
+    /// playback starts within a few seconds) then larger ones (efficient), breaking on sentence
+    /// boundaries, hard-splitting on a word boundary only when a single sentence exceeds the cap.
+    /// The ranges tile the whole string in order (every character belongs to exactly one chunk).
+    public static func chunkRanges(text: String, firstMax: Int = 140, restMax: Int = 480) -> [NSRange] {
+        let ns = text as NSString
+        guard ns.length > 0 else { return [] }
+
+        // Sentence pieces (including trailing whitespace); cover any gaps so the tiles are complete.
+        var pieces: [NSRange] = []
+        var covered = 0
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
+                               options: [.bySentences, .substringNotRequired]) { _, range, _, _ in
+            if range.location > covered {
+                pieces.append(NSRange(location: covered, length: range.location - covered))
+            }
+            pieces.append(range)
+            covered = range.location + range.length
+        }
+        if covered < ns.length { pieces.append(NSRange(location: covered, length: ns.length - covered)) }
+
+        // Hard-split any piece longer than the cap on word boundaries.
+        func split(_ r: NSRange, max: Int) -> [NSRange] {
+            guard r.length > max else { return [r] }
+            var out: [NSRange] = []
+            var start = r.location
+            let end = r.location + r.length
+            while end - start > max {
+                var cut = start + max
+                while cut > start, ns.character(at: cut - 1) != 32 { cut -= 1 }   // back to a space
+                if cut == start { cut = start + max }                              // no space — hard cut
+                out.append(NSRange(location: start, length: cut - start))
+                start = cut
+            }
+            out.append(NSRange(location: start, length: end - start))
+            return out
+        }
+
+        // Greedy packing: first chunk small, the rest larger.
+        var chunks: [NSRange] = []
+        var current: NSRange? = nil
+        func capNow() -> Int { chunks.isEmpty ? firstMax : restMax }
+        for piece in pieces {
+            for part in split(piece, max: restMax) {
+                if let c = current {
+                    if c.length + part.length <= capNow() {
+                        current = NSRange(location: c.location, length: c.length + part.length)
+                    } else {
+                        chunks.append(c)
+                        current = part
+                    }
+                } else if part.length >= capNow() {
+                    chunks.append(part)
+                } else {
+                    current = part
+                }
+            }
+        }
+        if let c = current { chunks.append(c) }
+        return chunks
+    }
+
     /// Word-highlight timings for audio rendered WITHOUT per-word callbacks (the neural voice):
     /// each word's start time is estimated proportionally to its character position — close enough
     /// for a reading highlight, and it never drifts past the end.
