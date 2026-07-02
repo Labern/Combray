@@ -75,11 +75,12 @@ nav.scrolled{background:rgba(250,245,235,.82); backdrop-filter:saturate(1.3) blu
 .eyebrow{display:inline-flex; align-items:center; gap:10px; color:var(--gold-deep); font-family:var(--display);
   font-weight:500; letter-spacing:.16em; text-transform:uppercase; font-size:.82rem; margin-bottom:26px}
 .eyebrow .made{width:26px;height:22px}
-h1{font-family:var(--display); font-weight:600; font-size:clamp(2.5rem,6.2vw,4.4rem); line-height:1.04;
+h1{font-family:var(--display); font-weight:600; font-size:clamp(3rem,7.2vw,5.4rem); line-height:1.03;
   letter-spacing:-.02em; color:var(--ink); margin:0 auto; max-width:16ch}
 h1 em{font-style:italic; color:var(--gold-deep)}
-.lede{font-size:clamp(1.02rem,2vw,1.26rem); color:var(--ink-soft); max-width:46ch; margin:22px auto 0; line-height:1.62}
-.tagline{font-style:italic; color:var(--muted); margin-top:14px; font-size:.98rem}
+.lede{font-size:clamp(1.15rem,2.4vw,1.45rem); color:var(--ink-soft); max-width:46ch; margin:24px auto 0; line-height:1.6}
+.tagline{font-style:italic; color:var(--muted); margin-top:15px; font-size:1.08rem}
+.hero s{text-decoration:line-through; opacity:.55; font-weight:400}
 .require{margin-top:22px}
 .require a{display:inline-block; color:var(--gold-deep); font-weight:500; font-size:.98rem;
   border:1px solid var(--gold-soft); border-radius:999px; padding:7px 18px; background:rgba(235,216,166,.22);
@@ -224,7 +225,6 @@ footer .small{font-size:.9rem; margin-top:10px}
     <h1 class="reveal">Every letter,<br><em>kept forever.</em></h1>
     <p class="lede reveal">Combray photographs your handwritten letters, transcribes the handwriting with Claude, and keeps them in a searchable archive — the original beside a faithful reading, for good.</p>
     <p class="tagline reveal">One bite of the madeleine brings it all back.</p>
-    <p class="require reveal"><a href="https://claude.ai" target="_blank" rel="noopener">Currently requires a Claude subscription — sign up here ↗</a></p>
     <div class="cta-row reveal">
       <a class="btn btn-gold" href="https://github.com/Labern/Combray/releases/latest/download/Combray.pkg">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
@@ -232,7 +232,8 @@ footer .small{font-size:.9rem; margin-top:10px}
       </a>
       <a class="btn btn-ghost" href="#install">Install with Homebrew</a>
     </div>
-    <p class="hero-meta reveal">macOS 13+ · <b>Free for 28 days</b></p>
+    <p class="require reveal"><a href="https://claude.ai" target="_blank" rel="noopener">Currently requires a Claude subscription — sign up here ↗</a></p>
+    <p class="hero-meta reveal">macOS 13+ · <s>Free for 28 days</s> <b>Free right now for a limited time</b></p>
     <div class="hero-shot reveal" id="heroShot">
       <div class="window">
         <div class="bar"><i></i><i></i><i></i><span class="t">Combray — Letter to my dear friend</span></div>
@@ -249,8 +250,8 @@ footer .small{font-size:.9rem; margin-top:10px}
         <p class="sec-sub">Combray is a Mac app. Download the installer, or use Homebrew if you'd rather.</p></div>
 
       <div class="pricecard reveal">
-        <div class="price">Free <span>for 28 days</span></div>
-        <div class="trial">Then keep everything you've archived.</div>
+        <div class="price">Free <span><s style="opacity:.55">for 28 days</s></span></div>
+        <div class="trial">Free right now, for a limited time.</div>
         <div class="cta-row" style="margin-top:30px">
           <a class="btn btn-gold" href="https://github.com/Labern/Combray/releases/latest/download/Combray.pkg">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
