@@ -435,6 +435,97 @@ public struct AnthropicClient: Sendable {
     """
 
     /// Resolves auth headers from the stored credential (refreshing an expired OAuth token).
+    // MARK: - People resolution
+
+    /// One proposed identity merge from the People-resolution pass.
+    public struct PersonMerge: Codable, Sendable {
+        public let alias: String        // the name to fold away (as it appears in the catalog)
+        public let canonical: String    // the one name this person should appear under
+        public let confidence: String   // high | medium | low
+    }
+    private struct ResolveResult: Codable { let merges: [PersonMerge] }
+
+    /// Asks Claude to resolve the People index into one entry per human being: duplicates,
+    /// spelling variants, partial names, nicknames/endearments ("darling sweetness"), and
+    /// relations folded into the name the owner would search by ("Mum"). The catalog carries one
+    /// person per line with letter counts and relationship hints drawn from their letters.
+    public func resolvePeople(catalog: String, ownerContext: String? = nil,
+                              model overrideModel: String? = nil) async throws -> [PersonMerge] {
+        let model = overrideModel ?? self.model
+        let headers = try await Self.authHeaders()
+
+        var systemBlocks: [[String: Any]] = []
+        if Keychain.credential()?.kind == .oauth {
+            systemBlocks.append(["type": "text",
+                                 "text": "You are Claude Code, Anthropic's official CLI for Claude."])
+        }
+        systemBlocks.append(["type": "text", "text": Self.resolvePeopleInstruction])
+
+        var userText = "PEOPLE (one per line):\n\(catalog)"
+        if let ownerContext, !ownerContext.isEmpty {
+            userText = "OWNER PROFILE:\n\(ownerContext)\n\n" + userText
+        }
+        let schema: [String: Any] = [
+            "type": "object", "additionalProperties": false, "required": ["merges"],
+            "properties": [
+                "merges": ["type": "array", "items": [
+                    "type": "object", "additionalProperties": false,
+                    "required": ["alias", "canonical", "confidence"],
+                    "properties": ["alias": ["type": "string"],
+                                   "canonical": ["type": "string"],
+                                   "confidence": ["type": "string", "enum": ["high", "medium", "low"]]]
+                ]]
+            ]
+        ]
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 4000,
+            "output_config": ["format": ["type": "json_schema", "schema": schema]],
+            "system": systemBlocks,
+            "messages": [["role": "user", "content": [["type": "text", "text": userText]]]]
+        ]
+
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        request.httpMethod = "POST"
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 120
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw AnthropicError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        guard
+            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let blocks = root["content"] as? [[String: Any]],
+            let text = blocks.first(where: { $0["type"] as? String == "text" })?["text"] as? String,
+            let jsonData = Self.extractJSON(text).data(using: .utf8)
+        else { throw AnthropicError.noContent }
+        return (try? JSONDecoder().decode(ResolveResult.self, from: jsonData))?.merges ?? []
+    }
+
+    static let resolvePeopleInstruction = """
+    You are curating the People index of a personal archive of letters. The same human being often \
+    appears under several names — a full name, a first name, a misspelling, a nickname or term of \
+    endearment ("darling sweetness"), or a relation word ("Mother"). You are given the archive \
+    owner's profile and a PEOPLE catalog, one person-entry per line, as: "Name" — N letters — \
+    roles — hints (relationship and suspected-writer notes drawn from their letters). Propose \
+    merges so the index has exactly ONE entry per real person. Rules: \
+    (1) If someone is a close relation of the owner, the canonical name is the relation as the \
+    owner would say and search it — "Mum", "Dad", "Grandma" — with the real name in parentheses \
+    when known, e.g. "Mum (Vivienne)". \
+    (2) A term of endearment is never a canonical name: resolve it to the real person when the \
+    hints and profile support it. \
+    (3) Otherwise prefer the fullest real name ("Eleanor Whitfield" over "Eleanor"). \
+    (4) Never merge two people who are plausibly distinct; when unsure, leave them apart or use \
+    confidence "low". Do not invent names that are not grounded in the catalog or profile. \
+    Return ONLY the JSON object with the merges (empty list if nothing should change).
+    """
+
+    /// Resolves auth headers from the stored credential (refreshing an expired OAuth token).
     static func authHeaders() async throws -> [String: String] {
         guard var cred = Keychain.credential() else { throw AnthropicError.missingAPIKey }
         switch cred.kind {

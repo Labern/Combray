@@ -141,8 +141,13 @@ final class ArchiveController: ObservableObject {
         }
         // Folders are the source of truth — rebuild any missing index rows from disk.
         try? archive.importFromFiles(Backup.scan(lettersDir: store.lettersDir))
+        // People resolution: replay every past identity decision (people.json), fold the
+        // deterministic duplicates, then let Claude resolve nicknames/relations in the background.
+        peopleAliases = PeopleAliases.load(fromArchiveRoot: store.root)
         try? archive.mergeDuplicatePeople(ownerName: ownerName)
+        tidyPeopleDeterministic()
         reload()
+        Task { await resolvePeopleWithClaude() }
 
         capture.onURL = { [weak self] url in Task { @MainActor in self?.captureURL = url } }
         capture.onConnect = { [weak self] in Task { @MainActor in self?.captureConnected = true } }
@@ -219,6 +224,94 @@ final class ArchiveController: ObservableObject {
     var selectedLetter: Letter? {
         guard let id = selectedLetterID else { return nil }
         return letters.first { $0.id == id }
+    }
+
+    // MARK: - People resolution (one entry per real person — canonical and final)
+
+    /// Every identity decision ever made, persisted at the archive root (`people.json`) so it
+    /// survives index rebuilds and applies to all future transcriptions.
+    private var peopleAliases = PeopleAliases()
+
+    /// Canonicalizes an incoming participant name: the alias store first (past decisions), then
+    /// relation folding ("Mother" → "Mum"). Applied wherever names enter the archive.
+    var nameResolver: (String) -> String {
+        let aliases = peopleAliases
+        return { name in
+            aliases.canonical(for: name) ?? PeopleResolver.relationCanonical(name) ?? name
+        }
+    }
+
+    /// The deterministic pass: case/spelling variants, relation terms, unambiguous first-name ⊂
+    /// full-name — persisted into the alias store (so they are final) and folded in the index.
+    func tidyPeopleDeterministic() {
+        let names = ((try? archive.people()) ?? []).map(\.displayName)
+        guard !names.isEmpty else { return }
+        var merges = PeopleResolver.deterministicMerges(names: names, ownerName: ownerName)
+        for n in names {                                     // replay stored decisions onto the index
+            if let c = peopleAliases.canonical(for: n), c != n { merges[n] = c }
+        }
+        guard !merges.isEmpty else { return }
+        for (a, c) in merges { peopleAliases.set(alias: a, canonical: c) }
+        peopleAliases.save(toArchiveRoot: images.root)
+        _ = try? archive.mergePeople(applying: merges)
+    }
+
+    /// The judgement pass: Claude reads the People catalog (with relationship hints from the
+    /// letters) plus the owner profile, and resolves nicknames/endearments to real people and
+    /// relations to the name the user searches by ("Mum"). Merges are persisted, then applied.
+    func resolvePeopleWithClaude() async {
+        guard Keychain.hasCredential() else { return }
+        let currentPeople = (try? archive.people()) ?? []
+        guard currentPeople.count > 1 else { return }
+        // Only re-run when the set of people actually changed since the last resolved state.
+        let fingerprint = currentPeople.map(\.displayName).sorted().joined(separator: "|")
+        guard fingerprint != UserDefaults.standard.string(forKey: "peopleResolvedFingerprint") else { return }
+
+        let parts = (try? archive.allParticipants()) ?? [:]
+        let allLetters = (try? archive.allLetters()) ?? []
+        let byId = Dictionary(uniqueKeysWithValues: allLetters.map { ($0.id, $0) })
+        let catalog = currentPeople.map { person -> String in
+            var count = 0
+            var roles: Set<String> = []
+            var hints: [String] = []
+            for (lid, p) in parts {
+                let isSender = p.sender == person.displayName
+                let isRecipient = p.recipients.contains(person.displayName)
+                guard isSender || isRecipient else { continue }
+                count += 1
+                if isSender { roles.insert("sender") }
+                if isRecipient { roles.insert("recipient") }
+                if hints.count < 2, let l = byId[lid] {
+                    let h = [l.metaRelationship, l.metaSuspectedWriter].compactMap(\.self).joined(separator: "; ")
+                    if !h.isEmpty { hints.append(h) }
+                }
+            }
+            let hintText = hints.isEmpty ? "" : " — hints: \(hints.joined(separator: " | "))"
+            return "\"\(person.displayName)\" — \(count) letter\(count == 1 ? "" : "s") — \(roles.sorted().joined(separator: "+"))\(hintText)"
+        }.joined(separator: "\n")
+
+        guard let proposed = try? await client.resolvePeople(catalog: catalog, ownerContext: ownerContext)
+        else { return }
+        let knownNorms = Set(currentPeople.map { PeopleResolver.normalize($0.displayName) })
+        var merges: [String: String] = [:]
+        for m in proposed where m.confidence != "low" {
+            let aNorm = PeopleResolver.normalize(m.alias)
+            let canonical = m.canonical.trimmingCharacters(in: .whitespaces)
+            guard knownNorms.contains(aNorm), !canonical.isEmpty,
+                  aNorm != PeopleResolver.normalize(canonical) || m.alias != canonical
+            else { continue }
+            merges[m.alias] = canonical
+        }
+        if !merges.isEmpty {
+            for (a, c) in merges { peopleAliases.set(alias: a, canonical: c) }
+            peopleAliases.save(toArchiveRoot: images.root)
+            _ = try? archive.mergePeople(applying: merges)
+            for id in ((try? archive.allLetters()) ?? []).map(\.id) { backup(id) }   // folders follow the index
+            reload()
+            if selectedLetterID != nil { loadDetail() }
+        }
+        let resolved = ((try? archive.people()) ?? []).map(\.displayName).sorted().joined(separator: "|")
+        UserDefaults.standard.set(resolved, forKey: "peopleResolvedFingerprint")
     }
 
     func reload() {
@@ -310,11 +403,13 @@ final class ArchiveController: ObservableObject {
         defer { busy = nil; isTranscribing = false }
         do {
             let result = try await transcribeWithFallback(urls)
-            _ = try archive.applyTranscription(result, toLetterId: letterId)
+            _ = try archive.applyTranscription(result, toLetterId: letterId, resolver: nameResolver)
+            tidyPeopleDeterministic()
             backup(letterId)
             reload()
             if selectedLetterID == letterId { loadDetail() }
             flashTranscribed()
+            Task { await resolvePeopleWithClaude() }   // nicknames/relations, in the background
         } catch {
             errorText = error.localizedDescription
         }
@@ -664,7 +759,7 @@ final class ArchiveController: ObservableObject {
         let s = (sender?.trimmingCharacters(in: .whitespaces)).flatMap { $0.isEmpty ? nil : $0 }
         let r = recipients.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         do {
-            try archive.setParticipants(letterId: id, sender: s, recipients: r)
+            try archive.setParticipants(letterId: id, sender: s, recipients: r, resolver: nameResolver)
             backup(id)
             reload(); loadDetail()
         } catch { errorText = error.localizedDescription }

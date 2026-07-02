@@ -215,27 +215,84 @@ public struct Archive: Sendable {
         }
     }
 
-    /// Finds a person by exact display name, or creates one. (Smarter entity resolution later.)
+    /// Finds a person by display name (case-insensitively), or creates one. `resolver` maps an
+    /// incoming name to its canonical form first — the alias store + relation folding, supplied by
+    /// the controller — so "Mother", "mum" and "darling sweetness" all land on the ONE "Mum" row.
     @discardableResult
-    public func findOrCreatePerson(named name: String) throws -> Person {
+    public func findOrCreatePerson(named name: String, resolver: ((String) -> String)? = nil) throws -> Person {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolved = (resolver?(trimmed) ?? trimmed).trimmingCharacters(in: .whitespacesAndNewlines)
         return try dbWriter.write { db in
-            if let existing = try Person
-                .filter(Column("displayName") == trimmed)
-                .fetchOne(db) {
+            if let existing = try Person.fetchOne(
+                db, sql: "SELECT * FROM person WHERE LOWER(displayName) = LOWER(?)",
+                arguments: [resolved]) {
                 return existing
             }
-            let person = Person(displayName: trimmed)
+            let person = Person(displayName: resolved)
             try person.insert(db)
             return person
         }
     }
 
+    /// Folds people into their canonical identities: for each `alias → canonical`, every person row
+    /// matching the alias is merged into the canonical person (created or renamed if needed), the
+    /// letters re-pointed, and their search rows refreshed. Returns how many rows were folded.
+    @discardableResult
+    public func mergePeople(applying merges: [String: String]) throws -> Int {
+        guard !merges.isEmpty else { return 0 }
+        var applied = 0
+        try dbWriter.write { db in
+            var byNorm: [String: [Person]] = [:]
+            for p in try Person.fetchAll(db) {
+                byNorm[PeopleResolver.normalize(p.displayName), default: []].append(p)
+            }
+            for (alias, canonical) in merges {
+                let aNorm = PeopleResolver.normalize(alias)
+                let cNorm = PeopleResolver.normalize(canonical)
+                guard !aNorm.isEmpty, aNorm != cNorm else {
+                    // Same identity, different display (e.g. "mum" → "Mum"): just fix the spelling.
+                    if let p = byNorm[aNorm]?.first, p.displayName != canonical {
+                        try db.execute(sql: "UPDATE person SET displayName = ? WHERE id = ?",
+                                       arguments: [canonical, p.id])
+                    }
+                    continue
+                }
+                guard var victims = byNorm[aNorm], !victims.isEmpty else { continue }
+                let target: Person
+                if let existing = byNorm[cNorm]?.first {
+                    target = existing
+                } else {
+                    // No row for the canonical name yet — promote the first alias row by renaming it.
+                    var keep = victims.removeFirst()
+                    try db.execute(sql: "UPDATE person SET displayName = ? WHERE id = ?",
+                                   arguments: [canonical, keep.id])
+                    keep.displayName = canonical
+                    byNorm[cNorm] = [keep]
+                    target = keep
+                }
+                for v in victims where v.id != target.id {
+                    let lids = try String.fetchAll(
+                        db, sql: "SELECT letterId FROM letterPerson WHERE personId = ?", arguments: [v.id])
+                    try db.execute(sql: "UPDATE OR IGNORE letterPerson SET personId = ? WHERE personId = ?",
+                                   arguments: [target.id, v.id])
+                    try db.execute(sql: "DELETE FROM letterPerson WHERE personId = ?", arguments: [v.id])
+                    _ = try Person.deleteOne(db, key: v.id)
+                    for lid in lids { try refreshSearchIndex(db, letterId: lid) }
+                    applied += 1
+                }
+                byNorm[aNorm] = []
+            }
+        }
+        return applied
+    }
+
     /// Sets the sender and recipients for a letter (by name), then refreshes its search index.
-    public func setParticipants(letterId: String, sender: String?, recipients: [String]) throws {
+    /// `resolver` canonicalizes each name first (see `findOrCreatePerson`).
+    public func setParticipants(letterId: String, sender: String?, recipients: [String],
+                                resolver: ((String) -> String)? = nil) throws {
         // Resolve names first (their own write transactions are fine).
-        let senderPerson = try sender.map { try findOrCreatePerson(named: $0) }
-        let recipientPeople = try recipients.map { try findOrCreatePerson(named: $0) }
+        let senderPerson = try sender.map { try findOrCreatePerson(named: $0, resolver: resolver) }
+        let recipientPeople = try recipients.map { try findOrCreatePerson(named: $0, resolver: resolver) }
 
         try dbWriter.write { db in
             try LetterPerson.filter(Column("letterId") == letterId).deleteAll(db)
@@ -298,7 +355,8 @@ public struct Archive: Sendable {
     /// Applies a model transcription result to a letter — text, summary, date, hidden meta — and
     /// sets sender/recipients (creating people as needed). Refreshes the search index.
     @discardableResult
-    public func applyTranscription(_ r: TranscriptionResult, toLetterId letterId: String) throws -> Letter {
+    public func applyTranscription(_ r: TranscriptionResult, toLetterId letterId: String,
+                                   resolver: ((String) -> String)? = nil) throws -> Letter {
         guard var letter = try letter(id: letterId) else { throw ArchiveError.letterNotFound }
         letter.transcription = r.transcription
         if letter.aiTranscription == nil { letter.aiTranscription = r.transcription }
@@ -322,7 +380,8 @@ public struct Archive: Sendable {
         let saved = try save(letter)
         try setParticipants(letterId: letterId,
                             sender: Self.clean(r.sender),
-                            recipients: r.recipients.compactMap(Self.clean))
+                            recipients: r.recipients.compactMap(Self.clean),
+                            resolver: resolver)
         return saved
     }
 

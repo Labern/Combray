@@ -54,4 +54,19 @@ public enum SpeechSupport {
     /// — i.e. there is no natural (enhanced/premium) voice installed, so it will sound robotic until
     /// the user downloads one. Drives the in-app "install a natural voice" hint.
     public static func voiceIsRobotic(qualityTier: Int) -> Bool { qualityTier <= 0 }
+
+    /// Word-highlight timings for audio rendered WITHOUT per-word callbacks (the neural voice):
+    /// each word's start time is estimated proportionally to its character position — close enough
+    /// for a reading highlight, and it never drifts past the end.
+    public static func proportionalWordTimes(text: String, duration: TimeInterval)
+        -> [(time: TimeInterval, range: NSRange)] {
+        let ns = text as NSString
+        guard ns.length > 0, duration > 0 else { return [] }
+        var out: [(TimeInterval, NSRange)] = []
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
+                               options: [.byWords, .substringNotRequired]) { _, range, _, _ in
+            out.append((duration * Double(range.location) / Double(ns.length), range))
+        }
+        return out
+    }
 }
