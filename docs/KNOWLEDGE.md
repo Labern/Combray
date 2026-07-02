@@ -482,11 +482,18 @@ folders. Settings (`ownerName`, `ownerProfile`, etc.) live in UserDefaults, not 
 - **Recipe:** `swift build -c release` → copy `.build/release/Combray` into `.build/Combray.app/
   Contents/MacOS/Combray` → `PlistBuddy Set :CFBundleShortVersionString/:CFBundleVersion X` →
   `codesign --force --deep --sign - .build/Combray.app` → stage to `dist/stage/Applications/
-  Combray.app` → `pkgbuild --root dist/stage --install-location / --identifier com.labern.combray
-  --version X dist/Combray.pkg` → **also zip the signed app: `ditto -c -k --keepParent
-  .build/Combray.app dist/Combray.zip`** → `shasum -a 256` → `gh release create vX dist/Combray.pkg
-  dist/Combray.zip` (or `gh release upload vX … --clobber`) → update tap `Labern/homebrew-combray`
-  `Casks/combray.rb` (`version` + `sha256`) via `gh api -X PUT … contents/Casks/combray.rb`.
+  Combray.app` → `pkgbuild --root dist/stage --install-location / --scripts scripts/pkg
+  --identifier com.labern.combray --version X dist/Combray.pkg` → **also zip the signed app:
+  `ditto -c -k --keepParent .build/Combray.app dist/Combray.zip`** → `shasum -a 256` →
+  `gh release create vX dist/Combray.pkg dist/Combray.zip` (or `gh release upload vX … --clobber`)
+  → update tap `Labern/homebrew-combray` `Casks/combray.rb` (`version` + `sha256`) via
+  `gh api -X PUT … contents/Casks/combray.rb`.
+- **NEVER drop `--scripts scripts/pkg` (v0.14.2+):** the pkg's `postinstall` chowns
+  `/Applications/Combray.app` to the console user. Root-owned installs (plain pkg/brew) force the
+  privileged password path on every update and caused the recurring "update available but never
+  installs" loop; user-owned installs auto-update **silently forever**. One successful update
+  ratchets any machine into the silent path. (v0.14.1 companion fix: the privileged installer runs
+  IN-app on click — the old flow prompted after quit, got cancelled, looped.)
 - **The `Combray.zip` asset is REQUIRED for the in-app auto-updater** (see below). It's the same
   signed `.app` as the `.pkg`, just zipped with `--keepParent` so it unzips to `Combray.app`. A
   release missing the zip simply can't self-update (the updater stays silent); the `.pkg`/Homebrew
