@@ -15,6 +15,11 @@ public struct ImageStore: Sendable {
     /// NOT gate behind a privacy prompt (unlike `~/Documents`), so the app never has to ask for
     /// permission. Still the source of truth: `Letters/<n>/` folders + `combray.sqlite`.
     public static func defaultRoot() -> URL {
+        // Override hook for screenshot/testing runs (a seeded sample archive) — normal launches
+        // never set this.
+        if let override = ProcessInfo.processInfo.environment["COMBRAY_ROOT"], !override.isEmpty {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
         let base = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return base.appendingPathComponent("Combray", isDirectory: true)

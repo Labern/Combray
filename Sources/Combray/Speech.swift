@@ -504,7 +504,6 @@ struct PlaybackBar: View {
                 }
                 .buttonStyle(TapStyle())
                 .foregroundStyle(Theme.faint)
-                .help("Downloads a natural neural voice (~120 MB) into Combray itself — no system settings, used automatically from then on.")
             }
         }
     }

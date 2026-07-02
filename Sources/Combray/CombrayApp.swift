@@ -20,6 +20,12 @@ struct CombrayApp: App {
             renderLetterPreviewPNG(to: args[i + 1])
             exit(0)
         }
+        if let i = args.firstIndex(of: "--render-app"), i + 1 < args.count {
+            let app = NSApplication.shared
+            app.setActivationPolicy(.accessory)
+            renderAppShellPNG(to: args[i + 1])                   // schedules snapshot + exit(0)
+            app.run()
+        }
         if let i = args.firstIndex(of: "--render-scene"), i + 2 < args.count {
             let scene = args[i + 1]
             let out = args[i + 2]

@@ -294,7 +294,6 @@ struct LetterDetailView: View {
                 }
                 if !letter.transcription.isEmpty {
                     PlaybackBar(controller: speech)
-                        .tip("Read the transcription aloud — play/pause, skip 15s, follow the words.")
                 }
                 if isEditing {
                     TextEditor(text: $draft)

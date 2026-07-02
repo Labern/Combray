@@ -7,15 +7,15 @@
 <meta name="description" content="Combray photographs your handwritten letters, transcribes the handwriting with Claude, and keeps them in a searchable archive — the original beside a faithful reading, for good. For macOS." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet" />
 <style>
 :root{
   --paper:#FAF5EB; --paper-2:#F3E9D8; --paper-3:#EFE3CE;
   --ink:#1E1912; --ink-soft:#4C4336; --muted:#8B806E;
   --gold:#B0761A; --gold-bright:#D9A93B; --gold-deep:#8A5B12; --gold-soft:#EBD8A6;
   --line:#E4D8BF; --dark:#171009; --dark-2:#211809; --dark-ink:#EDE3CE;
-  --display:'Fraunces',Georgia,'Times New Roman',serif;
-  --body:'Newsreader',Georgia,serif;
+  --display:'Cormorant Garamond',Georgia,'Times New Roman',serif;
+  --body:'Source Serif 4',Georgia,serif;
   --mono:ui-monospace,'SF Mono',Menlo,monospace;
   --radius:16px; --shadow:0 30px 80px -30px rgba(60,40,10,.45);
   --maxw:1120px;
@@ -47,7 +47,7 @@ nav{
   padding:16px 28px; transition:background .4s ease, box-shadow .4s ease, backdrop-filter .4s ease;
 }
 nav.scrolled{background:rgba(250,245,235,.82); backdrop-filter:saturate(1.3) blur(14px); box-shadow:0 1px 0 var(--line)}
-.brand{display:flex; align-items:center; gap:11px; font-family:var(--display); font-weight:600; font-size:1.28rem; letter-spacing:.01em}
+.brand{display:flex; align-items:center; gap:11px; font-family:var(--display); font-weight:700; font-size:1.34rem; letter-spacing:.01em}
 .brand .made{width:30px; height:26px}
 .nav-links{display:flex; align-items:center; gap:30px}
 .nav-links a{color:var(--ink-soft); font-size:1rem; letter-spacing:.01em}
@@ -75,12 +75,17 @@ nav.scrolled{background:rgba(250,245,235,.82); backdrop-filter:saturate(1.3) blu
 .eyebrow{display:inline-flex; align-items:center; gap:10px; color:var(--gold-deep); font-family:var(--display);
   font-weight:500; letter-spacing:.16em; text-transform:uppercase; font-size:.82rem; margin-bottom:26px}
 .eyebrow .made{width:26px;height:22px}
-h1{font-family:var(--display); font-weight:600; font-size:clamp(2.9rem,7.4vw,5.6rem); line-height:1.02;
-  letter-spacing:-.02em; color:var(--ink); margin:0 auto; max-width:15ch}
+h1{font-family:var(--display); font-weight:700; font-size:clamp(2.5rem,6.2vw,4.7rem); line-height:1.04;
+  letter-spacing:-.015em; color:var(--ink); margin:0 auto; max-width:16ch}
 h1 em{font-style:italic; color:var(--gold-deep)}
-.lede{font-size:clamp(1.15rem,2.4vw,1.45rem); color:var(--ink-soft); max-width:44ch; margin:26px auto 0; line-height:1.6}
-.tagline{font-style:italic; color:var(--muted); margin-top:16px; font-size:1.08rem}
-.cta-row{display:flex; gap:16px; justify-content:center; align-items:center; flex-wrap:wrap; margin-top:36px}
+.lede{font-size:clamp(1.02rem,2vw,1.26rem); color:var(--ink-soft); max-width:46ch; margin:22px auto 0; line-height:1.62}
+.tagline{font-style:italic; color:var(--muted); margin-top:14px; font-size:.98rem}
+.require{margin-top:22px}
+.require a{display:inline-block; color:var(--gold-deep); font-weight:500; font-size:.98rem;
+  border:1px solid var(--gold-soft); border-radius:999px; padding:7px 18px; background:rgba(235,216,166,.22);
+  transition:border-color .2s, background .2s}
+.require a:hover{border-color:var(--gold); background:rgba(235,216,166,.4)}
+.cta-row{display:flex; gap:16px; justify-content:center; align-items:center; flex-wrap:wrap; margin-top:22px}
 .hero-meta{margin-top:18px; color:var(--muted); font-size:.95rem; letter-spacing:.02em}
 .hero-meta b{color:var(--gold-deep); font-weight:600}
 
@@ -101,13 +106,13 @@ h1 em{font-style:italic; color:var(--gold-deep)}
 section{padding:96px 0}
 .sec-head{text-align:center; max-width:40ch; margin:0 auto 12px}
 .kicker{color:var(--gold-deep); font-family:var(--display); font-weight:500; letter-spacing:.14em; text-transform:uppercase; font-size:.8rem}
-h2{font-family:var(--display); font-weight:600; font-size:clamp(2rem,4.4vw,3.1rem); line-height:1.08; letter-spacing:-.015em; margin:12px 0 0}
+h2{font-family:var(--display); font-weight:700; font-size:clamp(2rem,4.4vw,3.1rem); line-height:1.08; letter-spacing:-.01em; margin:12px 0 0}
 .sec-sub{color:var(--ink-soft); font-size:1.12rem; max-width:52ch; margin:18px auto 0; text-align:center}
 
 .feature{display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center; margin-top:70px}
 .feature:first-of-type{margin-top:56px}
 .feature.rev .f-text{order:2}
-.feature .f-text h3{font-family:var(--display); font-weight:600; font-size:1.9rem; letter-spacing:-.01em; line-height:1.12}
+.feature .f-text h3{font-family:var(--display); font-weight:700; font-size:2rem; letter-spacing:-.005em; line-height:1.12}
 .feature .f-text .num{font-family:var(--display); color:var(--gold); font-size:1rem; letter-spacing:.1em; font-weight:600}
 .feature .f-text p{color:var(--ink-soft); margin-top:14px; font-size:1.08rem}
 .feature ul{list-style:none; margin-top:18px; display:flex; flex-direction:column; gap:10px}
@@ -169,6 +174,15 @@ footer .brand{justify-content:center; color:var(--ink); margin-bottom:14px}
 footer a{color:var(--gold-deep)}
 footer .small{font-size:.9rem; margin-top:10px}
 
+/* ---------- back to top ---------- */
+.totop{position:fixed; right:26px; bottom:26px; z-index:60; width:46px; height:46px; border-radius:50%;
+  display:grid; place-items:center; background:var(--ink); color:var(--paper); border:none;
+  box-shadow:0 12px 30px -10px rgba(40,25,5,.5); cursor:pointer; opacity:0; pointer-events:none;
+  transform:translateY(12px); transition:opacity .3s, transform .3s, background .2s}
+.totop.show{opacity:1; pointer-events:auto; transform:none}
+.totop:hover{background:var(--gold-deep)}
+.totop svg{width:20px;height:20px}
+
 /* ---------- reveal ---------- */
 .reveal{opacity:0; transform:translateY(26px); transition:opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1)}
 .reveal.in{opacity:1; transform:none}
@@ -210,6 +224,7 @@ footer .small{font-size:.9rem; margin-top:10px}
     <h1 class="reveal">Every letter,<br><em>kept forever.</em></h1>
     <p class="lede reveal">Combray photographs your handwritten letters, transcribes the handwriting with Claude, and keeps them in a searchable archive — the original beside a faithful reading, for good.</p>
     <p class="tagline reveal">One bite of the madeleine brings it all back.</p>
+    <p class="require reveal"><a href="https://claude.ai" target="_blank" rel="noopener">Currently requires a Claude subscription — sign up here ↗</a></p>
     <div class="cta-row reveal">
       <a class="btn btn-gold" href="https://github.com/Labern/Combray/releases/latest/download/Combray.pkg">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
@@ -217,7 +232,7 @@ footer .small{font-size:.9rem; margin-top:10px}
       </a>
       <a class="btn btn-ghost" href="#install">Install with Homebrew</a>
     </div>
-    <p class="hero-meta reveal">macOS 13+ · <b>Free for 28 days</b> · no account needed</p>
+    <p class="hero-meta reveal">macOS 13+ · <b>Free for 28 days</b></p>
     <div class="hero-shot reveal" id="heroShot">
       <div class="window">
         <div class="bar"><i></i><i></i><i></i><span class="t">Combray — Letter to my dear friend</span></div>
@@ -226,20 +241,44 @@ footer .small{font-size:.9rem; margin-top:10px}
     </div>
   </header>
 
-  <!-- WHAT IT IS -->
-  <section id="what" style="padding-top:70px">
-    <div class="wrap sec-head reveal" style="max-width:56ch">
-      <span class="kicker">What it is</span>
-      <h2>A home for handwriting.</h2>
-      <p class="sec-sub" style="max-width:none">Boxes of letters, near-illegible cursive, dates you can't quite read. Combray takes a photo of each page, has <b>Claude</b> read the hand and pull out who wrote it, to whom, when, and what it says — then keeps it all in plain folders on your Mac that you own outright. Every mode below is part of that one flow: <b>capture → transcribe → read → keep.</b></p>
+  <!-- INSTALL / TRIAL — first thing after the introduction -->
+  <section id="install" class="install" style="padding-top:80px">
+    <div class="wrap">
+      <div class="sec-head reveal"><span class="kicker">Install</span>
+        <h2>Start reading tonight.</h2>
+        <p class="sec-sub">Combray is a Mac app. Download the installer, or use Homebrew if you'd rather.</p></div>
+
+      <div class="pricecard reveal">
+        <div class="price">Free <span>for 28 days</span></div>
+        <div class="trial">Then keep everything you've archived.</div>
+        <div class="cta-row" style="margin-top:30px">
+          <a class="btn btn-gold" href="https://github.com/Labern/Combray/releases/latest/download/Combray.pkg">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+            Download Combray.pkg
+          </a>
+        </div>
+        <div class="brew">
+          <code id="brewcmd">brew tap Labern/combray &amp;&amp; brew install --cask combray</code>
+          <button class="copy" id="copyBtn">Copy</button>
+        </div>
+        <p class="fine">macOS 13 or later · Apple Silicon.<br>
+          Transcription runs on Claude, so you sign in with a <a href="https://claude.ai" target="_blank" rel="noopener"><b>paid Claude plan</b></a> — for now; wider access is coming.<br>
+          First launch: right-click <b>Combray</b> in Applications → <b>Open</b> (it isn't notarized yet).</p>
+        <p class="soon"><b>Lifetime license</b> — coming soon.</p>
+      </div>
     </div>
   </section>
 
   <div class="rule"></div>
 
-  <!-- TRANSCRIBE -->
+  <!-- HOW IT WORKS -->
   <section id="transcribe">
     <div class="wrap">
+      <div class="sec-head reveal" style="max-width:56ch">
+        <span class="kicker">How it works</span>
+        <h2>A home for handwriting.</h2>
+        <p class="sec-sub" style="max-width:none">Boxes of letters, near-illegible cursive, dates you can't quite read. Combray takes a photo of each page, has <b>Claude</b> read the hand and pull out who wrote it, to whom, when, and what it says — then keeps it all in plain folders on your Mac that you own outright. One flow, four moments: <b>capture → transcribe → read → keep.</b></p>
+      </div>
       <div class="feature reveal">
         <div class="f-text">
           <div class="num">01 — Capture &amp; Transcribe</div>
@@ -266,7 +305,7 @@ footer .small{font-size:.9rem; margin-top:10px}
             <li>Justified, paragraph-perfect reading view</li>
             <li>Read-aloud with live word highlighting &amp; ±15s skip</li>
             <li>Position / total timer as it plays</li>
-            <li>One click installs a natural macOS voice (free)</li>
+            <li>A natural British voice, built in — male or female to match the writer</li>
           </ul>
         </div>
         <div class="window"><div class="bar"><i></i><i></i><i></i><span class="t">Transcription</span></div>
@@ -350,29 +389,17 @@ footer .small{font-size:.9rem; margin-top:10px}
     </div>
   </section>
 
-  <!-- INSTALL / TRIAL -->
-  <section id="install" class="install">
-    <div class="wrap">
-      <div class="sec-head reveal"><span class="kicker">Install</span>
-        <h2>Start reading tonight.</h2>
-        <p class="sec-sub">Combray is a Mac app. Download the installer, or use Homebrew if you'd rather.</p></div>
-
-      <div class="pricecard reveal">
-        <div class="price">Free <span>for 28 days</span></div>
-        <div class="trial">Then keep everything you've archived.</div>
-        <div class="cta-row" style="margin-top:30px">
-          <a class="btn btn-gold" href="https://github.com/Labern/Combray/releases/latest/download/Combray.pkg">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
-            Download Combray.pkg
-          </a>
-        </div>
-        <div class="brew">
-          <code id="brewcmd">brew tap Labern/combray &amp;&amp; brew install --cask combray</code>
-          <button class="copy" id="copyBtn">Copy</button>
-        </div>
-        <p class="fine">macOS 13 or later · Apple Silicon · no account needed.<br>
-          First launch: right-click <b>Combray</b> in Applications → <b>Open</b> (it isn't notarized yet).</p>
-        <p class="soon"><b>Lifetime license</b> — coming soon.</p>
+  <!-- BOTTOM CTA -->
+  <section class="install" style="padding-top:70px">
+    <div class="wrap sec-head reveal">
+      <span class="kicker">Ready?</span>
+      <h2>Bring the letters back.</h2>
+      <div class="cta-row" style="margin-top:26px">
+        <a class="btn btn-gold" href="https://github.com/Labern/Combray/releases/latest/download/Combray.pkg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+          Download for Mac
+        </a>
+        <a class="btn btn-ghost" href="#install">Install options</a>
       </div>
     </div>
   </section>
@@ -385,6 +412,10 @@ footer .small{font-size:.9rem; margin-top:10px}
   <p class="small">Made by <a href="https://github.com/Labern/Combray">Labern</a> · Mac only, for now · © 2026</p>
 </footer>
 
+<button class="totop" id="toTop" aria-label="Back to top">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+</button>
+
 <script>
 // nav background on scroll
 const nav=document.getElementById('nav');
@@ -394,6 +425,10 @@ addEventListener('scroll',()=>{const h=document.getElementById('heroShot'); if(h
 // reveal on scroll
 const io=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}}),{threshold:.12});
 document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+// back to top
+const toTop=document.getElementById('toTop');
+addEventListener('scroll',()=>toTop.classList.toggle('show',scrollY>600),{passive:true});
+toTop.addEventListener('click',()=>scrollTo({top:0,behavior:'smooth'}));
 // copy brew
 const btn=document.getElementById('copyBtn');
 btn?.addEventListener('click',async()=>{

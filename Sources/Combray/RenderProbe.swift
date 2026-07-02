@@ -15,6 +15,46 @@ You asked in your last letter whether I had heard from your brother. I had a sho
 Write soon, and tell me everything. Yours ever, with all my heart.
 """
 
+/// Renders the real app shell (RootView with a live controller) offscreen to a PNG — used to
+/// refresh `docs/screenshot.png` on minor releases without needing screen-recording permission.
+@MainActor
+func renderAppShellPNG(to path: String, width: CGFloat = 1040, height: CGFloat = 700) {
+    let controller = ArchiveController()
+    let updater = Updater()
+    // Compose sidebar + detail directly — NavigationSplitView's translucent sidebar material
+    // renders black in an offscreen cacheDisplay, so we mirror the layout without the material.
+    let content = VStack(spacing: 0) {
+        HStack(spacing: 0) {
+            SidebarView(mode: .constant(.letters))
+                .frame(width: 360)
+                .background(Theme.surface)
+                .scrollContentBackground(.hidden)
+            Divider()
+            DetailContainer()
+        }
+        QuoteBar()
+    }
+        .environmentObject(controller)
+        .environmentObject(updater)
+        .tint(Theme.accent)
+        .frame(width: width, height: height)
+    let host = NSHostingView(rootView: content)
+    host.frame = NSRect(x: 0, y: 0, width: width, height: height)
+    let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.appearance = NSAppearance(named: .aqua)
+    host.appearance = NSAppearance(named: .aqua)
+    window.contentView = host
+    window.makeKeyAndOrderFront(nil)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+        host.layoutSubtreeIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        guard let data = rep.representation(using: .png, properties: [:]) else { exit(1) }
+        try? data.write(to: URL(fileURLWithPath: path))
+        exit(0)
+    }
+}
+
 @MainActor
 func renderScenePNG(scene: String, to path: String, width: CGFloat) {
     let speech = SpeechController()
