@@ -109,6 +109,12 @@ public struct Letter: Codable, Identifiable, Hashable, Sendable {
     public var metaSuspectedWriter: String?
     /// Notable verbatim quotes, newline-separated.
     public var notableQuotes: String?
+    /// Read-aloud voicing substitutions, JSON `[{"original": …, "spoken": …}]` — Claude's context
+    /// judgements for dates/times/old-money, computed once per letter. Optional & additive.
+    public var speechSubstitutions: String?
+    /// Questionable readings awaiting review, JSON `[{"text": …, "reason": …, "status": …}]`
+    /// (status: open | approved | denied). Optional & additive.
+    public var uncertainSpans: String?
     /// Pinned to the top of the sidebar (at most 3 across the whole archive).
     public var pinned: Bool
     public var createdAt: Date
@@ -133,6 +139,8 @@ public struct Letter: Codable, Identifiable, Hashable, Sendable {
                 metaHandwriting: String? = nil,
                 metaSuspectedWriter: String? = nil,
                 notableQuotes: String? = nil,
+                speechSubstitutions: String? = nil,
+                uncertainSpans: String? = nil,
                 pinned: Bool = false,
                 createdAt: Date = Date(),
                 updatedAt: Date = Date()) {
@@ -155,6 +163,8 @@ public struct Letter: Codable, Identifiable, Hashable, Sendable {
         self.metaHandwriting = metaHandwriting
         self.metaSuspectedWriter = metaSuspectedWriter
         self.notableQuotes = notableQuotes
+        self.speechSubstitutions = speechSubstitutions
+        self.uncertainSpans = uncertainSpans
         self.pinned = pinned
         self.createdAt = createdAt
         self.updatedAt = updatedAt

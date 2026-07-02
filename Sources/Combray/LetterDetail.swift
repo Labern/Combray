@@ -108,7 +108,12 @@ struct LetterDetailView: View {
                                        transcription: letter.transcription)
             ? letter.transcription : TranscriptionText.flowed(letter.transcription)
     }
-    private func configureSpeech() { speech.configure(text: readableText, gender: letter.metaHandwriting) }
+    private func configureSpeech() {
+        let subs = LetterFile.decodeSpeechSubs(letter.speechSubstitutions)?
+            .map { (original: $0.original, spoken: $0.spoken) } ?? []
+        speech.configure(text: readableText, gender: letter.metaHandwriting, substitutions: subs)
+        c.ensureSpeechEnrichment(for: letter)
+    }
 
     var body: some View {
         HSplitView {
@@ -119,6 +124,7 @@ struct LetterDetailView: View {
         .onDisappear { speech.stop() }
         .onChange(of: letter.id) { _, _ in isEditing = false; syncFields(); configureSpeech() }
         .onChange(of: letter.transcription) { _, _ in configureSpeech() }
+        .onChange(of: letter.speechSubstitutions) { _, _ in configureSpeech() }   // enrichment landed
         .onChange(of: focus) { oldValue, _ in saveField(oldValue) }
         .onChange(of: letter.updatedAt) { _, _ in if focus == nil { syncFields() } }
         .sheet(isPresented: $showChat) { ChatSheet(letterID: letter.id).environmentObject(c) }
@@ -324,6 +330,8 @@ struct LetterDetailView: View {
                     .tip("Fix the transcription by hand.")
                 }
 
+                uncertainPanel
+
                 if let summary = letter.summary {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Summary").font(Theme.label).foregroundStyle(Theme.faint)
@@ -362,6 +370,47 @@ struct LetterDetailView: View {
         TranscriptionText(transcription: letter.transcription, documentType: letter.documentType, title: letter.title,
                           highlight: speech.spokenRange)
             .frame(maxWidth: layoutSignificant ? .infinity : 680, alignment: .leading)
+    }
+
+    /// "Questionable readings" — the words Claude flagged as uncertain, each with its reason,
+    /// awaiting a verdict: Approve keeps the reading; Not right marks it "[illegible]" in the text.
+    @ViewBuilder private var uncertainPanel: some View {
+        let open = (LetterFile.decodeUncertain(letter.uncertainSpans) ?? [])
+            .enumerated().filter { $0.element.status == "open" }
+        if !open.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    Image(systemName: "questionmark.circle.fill").foregroundStyle(Theme.accentDeep)
+                    Text("Questionable readings").font(Theme.label).foregroundStyle(Theme.faint)
+                    Spacer()
+                    Text("\(open.count) to review").font(Theme.small).foregroundStyle(Theme.faint)
+                }
+                Text("Claude wasn’t certain of these. Approve a reading to keep it, or mark it not right and it becomes “[illegible]”.")
+                    .font(Theme.small).foregroundStyle(Theme.faint)
+                ForEach(open, id: \.offset) { item in
+                    HStack(alignment: .firstTextBaseline, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\u{201C}\(item.element.text)\u{201D}")
+                                .font(Theme.body.weight(.semibold))
+                            Text(item.element.reason).font(Theme.small).foregroundStyle(Theme.faint)
+                        }
+                        Spacer()
+                        Button { c.resolveUncertain(index: item.offset, approve: true) } label: {
+                            Label("Approve", systemImage: "checkmark.circle")
+                        }
+                        .buttonStyle(TapStyle())
+                        .foregroundStyle(Theme.accentDeep)
+                        Button { c.resolveUncertain(index: item.offset, approve: false) } label: {
+                            Label("Not right", systemImage: "xmark.circle")
+                        }
+                        .buttonStyle(TapStyle())
+                        .foregroundStyle(.red)
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                }
+            }
+            .card()
+        }
     }
 
     private var actions: some View {

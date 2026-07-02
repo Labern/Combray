@@ -39,6 +39,10 @@ final class SpeechController: NSObject, ObservableObject {
 
     private var text = ""
     private var gender: String?
+    private var subsKey = ""
+    /// The speakable rendition (dates as dates, old money as old money) + the range map back to
+    /// the display text, so highlights land on the original tokens.
+    private var spoken: SpeechNormalizer.SpokenText?
     private var player: AVAudioPlayer?
     private var tick: Timer?
 
@@ -70,16 +74,21 @@ final class SpeechController: NSObject, ObservableObject {
     var prefersFemaleVoice: Bool { SpeechSupport.wantsFemale(gender) }
 
     /// Point the reader at a transcription. Resets playback; audio renders on first play.
-    func configure(text newText: String, gender newGender: String?) {
+    /// `substitutions` are the letter's cached Claude voicing judgements (may be empty).
+    func configure(text newText: String, gender newGender: String?,
+                   substitutions: [(original: String, spoken: String)] = []) {
         let trimmed = newText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed != text || newGender != gender else { return }
+        let newKey = substitutions.map { $0.original + "→" + $0.spoken }.joined(separator: "|")
+        guard trimmed != text || newGender != gender || newKey != subsKey else { return }
         stop()
         text = trimmed
         gender = newGender
+        subsKey = newKey
+        spoken = SpeechNormalizer.spokenText(for: trimmed, extra: substitutions)
         let sys = SpeechController.voice(forGender: newGender)
         clock.voiceIsRobotic = !NeuralVoice.shared.isReady()
             && SpeechSupport.voiceIsRobotic(qualityTier: SpeechController.tier(sys))
-        clock.total = SpeechSupport.estimateDuration(trimmed, wpm: 165)   // placeholder until rendered
+        clock.total = SpeechSupport.estimateDuration(spoken?.text ?? trimmed, wpm: 165)
     }
 
     func toggle() { clock.isPlaying ? pause() : play() }
@@ -151,12 +160,13 @@ final class SpeechController: NSObject, ObservableObject {
         usingSystemFile = false
         renderGeneration += 1
         let gen = renderGeneration
-        let ranges = SpeechSupport.chunkRanges(text: text)
+        let speakable = spoken?.text ?? text
+        let ranges = SpeechSupport.chunkRanges(text: speakable)
         guard !ranges.isEmpty else { clock.isPreparing = false; return }
         chunks = ranges.map { Chunk(range: $0) }
         currentChunk = 0
         pendingChunkStart = 0
-        let t = text as NSString
+        let t = speakable as NSString
         let female = prefersFemaleVoice
         let bin = NeuralVoice.shared.engineBinary
         let mdir = NeuralVoice.shared.modelDir
@@ -215,11 +225,19 @@ final class SpeechController: NSObject, ObservableObject {
         }
         chunks[index].url = url
         chunks[index].duration = probe.duration
-        let ns = text as NSString
+        let ns = (spoken?.text ?? text) as NSString
         let sub = ns.substring(with: chunks[index].range)
+        // Word times are in SPOKEN coordinates — map each back to the ORIGINAL text range, so the
+        // highlight lands on "6-8-66" while "the sixth of August…" is being said.
         chunks[index].words = SpeechSupport.proportionalWordTimes(text: sub, duration: probe.duration)
-            .map { (time: $0.time, range: NSRange(location: chunks[index].range.location + $0.range.location,
-                                                  length: $0.range.length)) }
+            .compactMap { w in
+                let abs = NSRange(location: chunks[index].range.location + w.range.location,
+                                  length: w.range.length)
+                guard let orig = spoken?.originalRange(forSpokenRange: abs) else {
+                    return (time: w.time, range: abs)
+                }
+                return (time: w.time, range: orig)
+            }
         refreshTotal()
         if pendingChunkStart == index {
             pendingChunkStart = nil
@@ -283,7 +301,7 @@ final class SpeechController: NSObject, ObservableObject {
         }
         systemRendering = true
         clock.isPreparing = true
-        let t = text
+        let t = spoken?.text ?? text
         let voice = SpeechController.voice(forGender: gender)
         Task.detached(priority: .userInitiated) { [weak self] in
             let result = SpeechController.renderSystem(text: t, voice: voice)
@@ -294,13 +312,16 @@ final class SpeechController: NSObject, ObservableObject {
     private func systemRenderDidFinish(_ result: SystemRender?, forText t: String) {
         systemRendering = false
         clock.isPreparing = false
-        guard text == t else {
+        guard (spoken?.text ?? text) == t else {
             if let url = result?.url { try? FileManager.default.removeItem(at: url) }
             return
         }
         guard let r = result, let p = try? AVAudioPlayer(contentsOf: r.url) else { return }
         systemAudioURL = r.url
-        systemWords = r.words
+        // Delegate word ranges are in SPOKEN coordinates — map back to the display text.
+        systemWords = r.words.map {
+            (time: $0.time, range: spoken?.originalRange(forSpokenRange: $0.range) ?? $0.range)
+        }
         usingSystemFile = true
         clock.total = r.duration
         p.delegate = self

@@ -118,6 +118,23 @@ public final class AppDatabase: Sendable {
             }
         }
 
+        // Additive: read-aloud voicing substitutions (JSON [{original, spoken}]) — Claude's
+        // judgement calls for dates/times/old-money, computed once per letter. Nullable; rebuilt
+        // from letter.json like every other column.
+        migrator.registerMigration("v4-speechSubstitutions") { db in
+            try db.alter(table: "letter") { t in
+                t.add(column: "speechSubstitutions", .text)
+            }
+        }
+
+        // Additive: questionable/illegible readings awaiting review (JSON [{text, reason, status}]).
+        // Nullable; rebuilt from letter.json like every other column.
+        migrator.registerMigration("v5-uncertainSpans") { db in
+            try db.alter(table: "letter") { t in
+                t.add(column: "uncertainSpans", .text)
+            }
+        }
+
         return migrator
     }
 }

@@ -377,6 +377,8 @@ public struct Archive: Sendable {
         letter.metaHandwriting = Self.clean(r.meta.handwriting_profile)
         letter.metaSuspectedWriter = Self.clean(r.meta.suspected_writer)
         letter.notableQuotes = r.notable_quotes.isEmpty ? nil : r.notable_quotes.joined(separator: "\n")
+        letter.uncertainSpans = LetterFile.encodeUncertain(
+            r.uncertain_spans.map { LetterFile.UncertainItem(text: $0.text, reason: $0.reason) })
         let saved = try save(letter)
         try setParticipants(letterId: letterId,
                             sender: Self.clean(r.sender),
@@ -461,9 +463,19 @@ public struct Archive: Sendable {
             aiTranscription: letter.aiTranscription,
             pages: pageNames,
             notableQuotes: letter.notableQuotes?.split(separator: "\n").map(String.init),
+            speechSubstitutions: LetterFile.decodeSpeechSubs(letter.speechSubstitutions),
+            uncertainSpans: LetterFile.decodeUncertain(letter.uncertainSpans),
             pinned: letter.pinned ? true : nil,
             createdAt: letter.createdAt,
             updatedAt: letter.updatedAt)
+    }
+
+    /// Stores the read-aloud voicing substitutions for a letter (JSON `[{original, spoken}]`) —
+    /// computed once, replayed on every future read-aloud.
+    public func saveSpeechSubstitutions(letterId: String, json: String) throws {
+        guard var l = try letter(id: letterId) else { return }
+        l.speechSubstitutions = json
+        _ = try save(l)
     }
 
     /// Writes `letter.json` + `transcription.txt` for a letter into its folder.
@@ -487,6 +499,8 @@ public struct Archive: Sendable {
                 metaRelationshipState: f.meta.relationshipState, metaWriterGoals: f.meta.writerGoals,
                 metaHandwriting: f.meta.handwriting, metaSuspectedWriter: f.meta.suspectedWriter,
                 notableQuotes: (f.notableQuotes?.isEmpty ?? true) ? nil : f.notableQuotes?.joined(separator: "\n"),
+                speechSubstitutions: LetterFile.encodeSpeechSubs(f.speechSubstitutions),
+                uncertainSpans: LetterFile.encodeUncertain(f.uncertainSpans),
                 pinned: f.pinned ?? false,
                 createdAt: f.createdAt, updatedAt: f.updatedAt)
             _ = try save(letter)

@@ -226,6 +226,53 @@ final class ArchiveController: ObservableObject {
         return letters.first { $0.id == id }
     }
 
+    // MARK: - Questionable readings review
+
+    /// Resolve one questionable reading: approve keeps the transcribed guess; deny replaces its
+    /// first occurrence with "[illegible]". Either way it leaves the review queue, permanently.
+    func resolveUncertain(index: Int, approve: Bool) {
+        guard var letter = selectedLetter,
+              var items = LetterFile.decodeUncertain(letter.uncertainSpans),
+              items.indices.contains(index), items[index].status == "open" else { return }
+        items[index].status = approve ? "approved" : "denied"
+        if !approve {
+            let needle = items[index].text
+            if !needle.isEmpty, let r = letter.transcription.range(of: needle) {
+                letter.transcription = letter.transcription.replacingCharacters(in: r, with: "[illegible]")
+            }
+        }
+        letter.uncertainSpans = LetterFile.encodeUncertain(items)
+        do {
+            _ = try archive.save(letter)
+            backup(letter.id)
+            reload(); loadDetail()
+        } catch { errorText = error.localizedDescription }
+    }
+
+    // MARK: - Read-aloud voicing enrichment (once per letter, cached in letter.json)
+
+    private var speechEnrichmentAttempted: Set<String> = []
+
+    /// Fetch Claude's context voicing judgements ("3/6" → "three and six") for a letter that has
+    /// none yet — once, in the background; the result persists in the DB and letter.json.
+    func ensureSpeechEnrichment(for letter: Letter) {
+        guard letter.speechSubstitutions == nil,
+              !letter.transcription.isEmpty,
+              Keychain.hasCredential(),
+              !speechEnrichmentAttempted.contains(letter.id) else { return }
+        speechEnrichmentAttempted.insert(letter.id)
+        Task {
+            guard let subs = try? await client.speechSubstitutions(transcription: letter.transcription)
+            else { return }
+            let typed = subs.map { LetterFile.SpokenSub(original: $0.original, spoken: $0.spoken) }
+            let json = LetterFile.encodeSpeechSubs(typed) ?? "[]"   // "[]" marks "checked, nothing needed"
+            try? archive.saveSpeechSubstitutions(letterId: letter.id, json: json)
+            backup(letter.id)
+            reload()
+            if selectedLetterID == letter.id { loadDetail() }
+        }
+    }
+
     // MARK: - People resolution (one entry per real person — canonical and final)
 
     /// Every identity decision ever made, persisted at the archive root (`people.json`) so it
@@ -451,8 +498,12 @@ final class ArchiveController: ObservableObject {
             errorText = "Sign in to Claude first (or add an API key in Settings)."
             return nil
         }
+        // Attach the letter's page photographs so questions can be answered from the actual
+        // handwriting ("what does that squiggle after 'dearest' say?"), not just the text.
+        let pageURLs = ((try? archive.pages(forLetterId: letter.id)) ?? []).map { images.url(for: $0) }
         do {
-            return try await askWithFallback(transcription: letter.transcription, history: history)
+            return try await askWithFallback(transcription: letter.transcription, history: history,
+                                             imageURLs: pageURLs)
         } catch {
             errorText = error.localizedDescription
             return nil
@@ -460,14 +511,17 @@ final class ArchiveController: ObservableObject {
     }
 
     private func askWithFallback(transcription: String,
-                                 history: [(role: String, text: String)]) async throws -> AskResult {
+                                 history: [(role: String, text: String)],
+                                 imageURLs: [URL] = []) async throws -> AskResult {
         let primary = transcriptionModel.modelID
         do {
-            return try await client.ask(transcription: transcription, history: history, model: primary)
+            return try await client.ask(transcription: transcription, history: history,
+                                        imageURLs: imageURLs, model: primary)
         } catch let AnthropicError.http(status, msg)
                     where transcriptionModel == .auto && primary == "claude-opus-4-8"
                     && Self.looksLikePlanLimit(status, msg) {
-            return try await client.ask(transcription: transcription, history: history, model: "claude-sonnet-4-6")
+            return try await client.ask(transcription: transcription, history: history,
+                                        imageURLs: imageURLs, model: "claude-sonnet-4-6")
         }
     }
 

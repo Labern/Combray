@@ -223,6 +223,7 @@ public struct AnthropicClient: Sendable {
     /// `(role: "user"|"assistant", text:)`), ending with the user's latest question. Returns the
     /// model's conversational reply plus an optional full proposed revision of the transcription.
     public func ask(transcription: String, history: [(role: String, text: String)],
+                    imageURLs: [URL] = [],
                     model overrideModel: String? = nil) async throws -> AskResult {
         let model = overrideModel ?? self.model
         let headers = try await Self.authHeaders()
@@ -232,10 +233,26 @@ public struct AnthropicClient: Sendable {
             systemBlocks.append(["type": "text",
                                  "text": "You are Claude Code, Anthropic's official CLI for Claude."])
         }
-        systemBlocks.append(["type": "text", "text": Self.askInstruction(transcription)])
+        systemBlocks.append(["type": "text",
+                             "text": Self.askInstruction(transcription, hasImages: !imageURLs.isEmpty)])
 
-        let messages = history.map { turn in
-            ["role": turn.role, "content": [["type": "text", "text": turn.text]]] as [String: Any]
+        // Attach the original page photographs to the FIRST user turn, so the whole conversation
+        // can be queried against the actual handwriting, not just the transcription.
+        var firstUserSeen = false
+        let messages: [[String: Any]] = history.map { turn in
+            var blocks: [[String: Any]] = []
+            if turn.role == "user", !firstUserSeen {
+                firstUserSeen = true
+                for url in imageURLs {
+                    if let jpeg = try? Self.jpegData(from: url) {
+                        blocks.append(["type": "image",
+                                       "source": ["type": "base64", "media_type": "image/jpeg",
+                                                  "data": jpeg.base64EncodedString()]])
+                    }
+                }
+            }
+            blocks.append(["type": "text", "text": turn.text])
+            return ["role": turn.role, "content": blocks]
         }
 
         let body: [String: Any] = [
@@ -266,17 +283,57 @@ public struct AnthropicClient: Sendable {
         else { throw AnthropicError.noContent }
 
         let json = Self.extractJSON(text)
-        guard let jsonData = json.data(using: .utf8) else { throw AnthropicError.noContent }
-        do {
-            return try JSONDecoder().decode(AskResult.self, from: jsonData)
-        } catch {
-            // Fall back to treating the whole reply as plain conversational text.
-            return AskResult(reply: text, suggestion: nil)
+        if let jsonData = json.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode(AskResult.self, from: jsonData) {
+            return AskResult(reply: Self.unescapeJSONText(decoded.reply),
+                             suggestion: decoded.suggestion.map(Self.unescapeJSONText))
         }
+        // Fallback: pull fields loosely, else show the text — never raw \uXXXX escape codes.
+        if let jsonData = json.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+           let reply = obj["reply"] as? String {
+            let suggestion = (obj["suggestion"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            return AskResult(reply: Self.unescapeJSONText(reply),
+                             suggestion: suggestion.map(Self.unescapeJSONText))
+        }
+        return AskResult(reply: Self.unescapeJSONText(text), suggestion: nil)
     }
 
-    static func askInstruction(_ transcription: String) -> String {
-        """
+    /// Interprets stray JSON string escapes (`’`, `\n`, `\"`) that occasionally survive into
+    /// display text — the "codes like \\u" bug. No-op for clean text; original returned on failure.
+    public static func unescapeJSONText(_ s: String) -> String {
+        guard s.contains("\\u") || s.contains("\\n") || s.contains("\\\"") || s.contains("\\t")
+        else { return s }
+        // Escape only what is INVALID inside a JSON string (real newlines/quotes/controls),
+        // leaving the existing backslash escapes intact, then let the JSON parser interpret them.
+        var e = ""
+        for ch in s {
+            switch ch {
+            case "\"": e += "\\\""
+            case "\n": e += "\\n"
+            case "\r": e += "\\r"
+            case "\t": e += "\\t"
+            default: e.append(ch)
+            }
+        }
+        guard let data = "[\"\(e)\"]".data(using: .utf8),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [String],
+              let out = arr.first else { return s }
+        return out
+    }
+
+    static func askInstruction(_ transcription: String, hasImages: Bool = false) -> String {
+        let vision = hasImages
+            ? """
+              The ORIGINAL PAGE PHOTOGRAPHS are attached to the conversation — read the handwriting \
+              directly whenever the user asks about a specific word, mark, date, signature, or \
+              anything visual, and say what you actually see on the page.
+              """
+            : """
+              You cannot see the original photo, so reason from spelling, grammar, sense, and \
+              context, and be honest about uncertainty.
+              """
+        return """
         You are helping the user review and proofread the transcription of a handwritten or \
         photographed document. Here is the CURRENT transcription, between the markers:
 
@@ -285,9 +342,8 @@ public struct AnthropicClient: Sendable {
         TRANSCRIPTION>>>
 
         The user will ask questions about it — often pointing at a passage that looks wrong and \
-        asking what you think. Answer helpfully, specifically, and concisely about THIS text. You \
-        cannot see the original photo, so reason from spelling, grammar, sense, and context, and be \
-        honest about uncertainty.
+        asking what you think. Answer helpfully, specifically, and concisely about THIS text. \
+        \(vision)
 
         When — and only when — you are confident a concrete correction would improve the \
         transcription, put the ENTIRE corrected transcription (the full text, with your change \
@@ -435,6 +491,75 @@ public struct AnthropicClient: Sendable {
     """
 
     /// Resolves auth headers from the stored credential (refreshing an expired OAuth token).
+    // MARK: - Read-aloud voicing (context judgements the rules can't make)
+
+    public struct SpokenSubstitution: Codable, Sendable {
+        public let original: String     // exact substring of the transcription
+        public let spoken: String       // how an English person would say it
+    }
+    private struct SpeechSubsResult: Codable { let substitutions: [SpokenSubstitution] }
+
+    /// Finds tokens a text-to-speech engine would misread and needs CONTEXT to voice — e.g. bare
+    /// "3/6" (money or a date?), "St" (Saint or Street?), initials, roman numerals — returning
+    /// exact original substrings with their spoken forms. Deterministic cases (numeric dates,
+    /// full £sd amounts, clock times, years) are handled locally and must NOT be returned.
+    public func speechSubstitutions(transcription: String,
+                                    model overrideModel: String? = nil) async throws -> [SpokenSubstitution] {
+        let model = overrideModel ?? self.model
+        let headers = try await Self.authHeaders()
+        var systemBlocks: [[String: Any]] = []
+        if Keychain.credential()?.kind == .oauth {
+            systemBlocks.append(["type": "text",
+                                 "text": "You are Claude Code, Anthropic's official CLI for Claude."])
+        }
+        systemBlocks.append(["type": "text", "text": Self.speechSubsInstruction])
+        let schema: [String: Any] = [
+            "type": "object", "additionalProperties": false, "required": ["substitutions"],
+            "properties": ["substitutions": ["type": "array", "items": [
+                "type": "object", "additionalProperties": false, "required": ["original", "spoken"],
+                "properties": ["original": ["type": "string"], "spoken": ["type": "string"]]
+            ]]]
+        ]
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 2000,
+            "output_config": ["format": ["type": "json_schema", "schema": schema]],
+            "system": systemBlocks,
+            "messages": [["role": "user", "content": [["type": "text", "text": transcription]]]]
+        ]
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        request.httpMethod = "POST"
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 60
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw AnthropicError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+        guard
+            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let blocks = root["content"] as? [[String: Any]],
+            let text = blocks.first(where: { $0["type"] as? String == "text" })?["text"] as? String,
+            let jsonData = Self.extractJSON(text).data(using: .utf8)
+        else { throw AnthropicError.noContent }
+        return (try? JSONDecoder().decode(SpeechSubsResult.self, from: jsonData))?.substitutions ?? []
+    }
+
+    static let speechSubsInstruction = """
+    You prepare a mid-20th-century British letter for being read aloud. Find ONLY the tokens a \
+    text-to-speech engine would misread AND that need context to voice correctly, and return each \
+    as its exact original substring plus how an English person of the period would say it. \
+    Typical cases: bare shillings/pence like "3/6" (money — "three and six" — unless context makes \
+    it a date), "St" as Saint versus Street, initials ("W.G." → "W G"), roman numerals, unusual \
+    abbreviations ("inst.", "ult.", "&c."), fractions like "1½" ("one and a half"). Do NOT return \
+    what needs no context: numeric dates (6-8-66), day-month dates, full £sd amounts, clock times, \
+    or plain years — those are voiced locally. Do not rewrite ordinary words. Return ONLY the JSON \
+    object; an empty list is the right answer for a letter with nothing ambiguous.
+    """
+
     // MARK: - People resolution
 
     /// One proposed identity merge from the People-resolution pass.

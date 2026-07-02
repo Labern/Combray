@@ -39,9 +39,54 @@ public struct LetterFile: Codable, Sendable {
     public var aiTranscription: String?
     public var pages: [String]      // page image filenames, in order
     public var notableQuotes: [String]?
+    /// Read-aloud voicing substitutions — optional/additive; absent in old records.
+    public var speechSubstitutions: [SpokenSub]?
+    /// Questionable readings awaiting review — optional/additive; absent in old records.
+    public var uncertainSpans: [UncertainItem]?
     public var pinned: Bool?        // pinned to the sidebar top (optional — absent in old records = false)
     public var createdAt: Date
     public var updatedAt: Date
+
+    /// One "say this token as…" pair for read-aloud (dates, times, old money).
+    public struct SpokenSub: Codable, Sendable, Equatable {
+        public var original: String
+        public var spoken: String
+        public init(original: String, spoken: String) { self.original = original; self.spoken = spoken }
+    }
+
+    /// One questionable reading: the transcribed guess, why it's doubtful, and its review status
+    /// ("open" | "approved" | "denied").
+    public struct UncertainItem: Codable, Sendable, Equatable {
+        public var text: String
+        public var reason: String
+        public var status: String
+        public init(text: String, reason: String, status: String = "open") {
+            self.text = text; self.reason = reason; self.status = status
+        }
+    }
+
+    public static func decodeUncertain(_ json: String?) -> [UncertainItem]? {
+        guard let data = json?.data(using: .utf8),
+              let items = try? JSONDecoder().decode([UncertainItem].self, from: data), !items.isEmpty
+        else { return nil }
+        return items
+    }
+    public static func encodeUncertain(_ items: [UncertainItem]?) -> String? {
+        guard let items, let data = try? JSONEncoder().encode(items) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// The DB stores substitutions as a JSON string column; letter.json stores them typed.
+    public static func decodeSpeechSubs(_ json: String?) -> [SpokenSub]? {
+        guard let data = json?.data(using: .utf8),
+              let subs = try? JSONDecoder().decode([SpokenSub].self, from: data), !subs.isEmpty
+        else { return nil }
+        return subs
+    }
+    public static func encodeSpeechSubs(_ subs: [SpokenSub]?) -> String? {
+        guard let subs, let data = try? JSONEncoder().encode(subs) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
 }
 
 public enum Backup {
