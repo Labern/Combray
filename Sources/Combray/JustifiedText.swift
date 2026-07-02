@@ -100,6 +100,12 @@ struct JustifiedText: View {
                 if let h = highlight, h.location >= 0, h.location + h.length <= len {
                     storage.addAttribute(.backgroundColor,
                                          value: Theme.accentNS.withAlphaComponent(0.35), range: h)
+                    // Keep the spoken word on screen: scroll the surrounding SwiftUI scroll view
+                    // (an NSScrollView underneath) so the reader never has to chase the voice.
+                    let glyphs = lm.glyphRange(forCharacterRange: h, actualCharacterRange: nil)
+                    var rect = lm.boundingRect(forGlyphRange: glyphs, in: tc)
+                    rect = rect.insetBy(dx: 0, dy: -90)          // breathing room above & below
+                    tv.scrollToVisible(rect)
                 }
                 coord.highlight = highlight
             }

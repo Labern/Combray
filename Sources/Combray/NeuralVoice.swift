@@ -1,4 +1,5 @@
 import SwiftUI
+import CryptoKit
 import CombrayCore
 
 /// Combray's embedded natural voice: the **sherpa-onnx** TTS engine running the **Kokoro** model
@@ -25,6 +26,24 @@ final class NeuralVoice: ObservableObject {
     let dir: URL
     init(root: URL = ImageStore.defaultRoot()) {
         dir = root.appendingPathComponent("NeuralVoice", isDirectory: true)
+        // Never leave an orphaned render burning CPU after the app quits.
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
+                                               object: nil, queue: .main) { _ in
+            NeuralVoice.cancelActiveRenders()
+        }
+    }
+
+    // MARK: active-render registry (so stop/quit can kill an in-flight synthesis immediately)
+
+    nonisolated private static let activeLock = NSLock()
+    nonisolated(unsafe) private static var activeRenders: Set<Process> = []
+
+    nonisolated static func cancelActiveRenders() {
+        activeLock.lock()
+        let running = activeRenders
+        activeRenders.removeAll()
+        activeLock.unlock()
+        for p in running where p.isRunning { p.terminate() }
     }
 
     private static let engineVersion = "1.13.3"
@@ -80,11 +99,47 @@ final class NeuralVoice: ObservableObject {
         }
     }
 
-    /// Render `text` to a WAV with the neural voice. Blocking (runs the engine) — call detached.
+    /// The persistent audio cache: every chunk ever rendered, keyed by (text, speaker, model).
+    /// A letter is synthesized ONCE — every later play is instant and costs zero CPU.
+    nonisolated static func cacheDir(root: URL = ImageStore.defaultRoot()) -> URL {
+        root.appendingPathComponent("NeuralVoice/Cache", isDirectory: true)
+    }
+
+    /// Drop the least-recently-used cached audio beyond ~500 MB. Called once per launch.
+    nonisolated static func pruneCache(maxBytes: Int = 500_000_000) {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: cacheDir(),
+                includingPropertiesForKeys: [.fileSizeKey, .contentAccessDateKey]) else { return }
+        var entries = files.compactMap { url -> (URL, Int, Date)? in
+            guard let v = try? url.resourceValues(forKeys: [.fileSizeKey, .contentAccessDateKey])
+            else { return nil }
+            return (url, v.fileSize ?? 0, v.contentAccessDate ?? .distantPast)
+        }
+        var total = entries.reduce(0) { $0 + $1.1 }
+        guard total > maxBytes else { return }
+        entries.sort { $0.2 < $1.2 }                          // oldest access first
+        for (url, size, _) in entries where total > maxBytes {
+            try? fm.removeItem(at: url)
+            total -= size
+        }
+    }
+
+    /// Render `text` to a WAV with the neural voice — or return it instantly from the cache.
+    /// Blocking (runs the engine) — call detached.
     nonisolated static func render(text: String, female: Bool, engineBinary: URL, modelDir: URL) -> URL? {
+        let fm = FileManager.default
+        let keySource = "kokoro-v0_19|\(speakerID(female: female))|\(text)"
+        let key = SHA256.hash(data: Data(keySource.utf8)).map { String(format: "%02x", $0) }.joined()
+        let cache = cacheDir()
+        let cached = cache.appendingPathComponent("\(key).wav")
+        if fm.fileExists(atPath: cached.path) { return cached }
+
         let out = FileManager.default.temporaryDirectory
             .appendingPathComponent("combray-neural-\(UUID().uuidString).wav")
-        let threads = max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2))
+        // Half-throttle: enough threads to stay ahead of realtime playback, never enough to
+        // saturate the machine (rendering the whole letter at 8 threads dragged smaller Macs down).
+        let cores = ProcessInfo.processInfo.activeProcessorCount
+        let threads = max(3, min(6, cores / 3))
         // `nice`d: the render must never crowd the UI thread or the audio playback it feeds.
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/nice")
@@ -98,10 +153,19 @@ final class NeuralVoice: ObservableObject {
                        "--output-filename=\(out.path)",
                        text]
         p.standardOutput = Pipe(); p.standardError = Pipe()
-        do { try p.run(); p.waitUntilExit() } catch { return nil }
+        do {
+            try p.run()
+            activeLock.lock(); activeRenders.insert(p); activeLock.unlock()
+            p.waitUntilExit()
+            activeLock.lock(); activeRenders.remove(p); activeLock.unlock()
+        } catch { return nil }
         guard p.terminationStatus == 0,
               ((try? out.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) ?? 0 > 44
         else { try? FileManager.default.removeItem(at: out); return nil }
+        // Into the cache — future plays of this chunk are free.
+        try? fm.createDirectory(at: cache, withIntermediateDirectories: true)
+        try? fm.removeItem(at: cached)
+        if (try? fm.moveItem(at: out, to: cached)) != nil { return cached }
         return out
     }
 

@@ -61,7 +61,10 @@ final class SpeechController: NSObject, ObservableObject {
     private var systemWords: [(time: TimeInterval, range: NSRange)] = []
     private var usingSystemFile = false
 
-    override init() { super.init() }
+    override init() {
+        super.init()
+        Task.detached(priority: .background) { NeuralVoice.pruneCache() }
+    }
 
     var hasText: Bool { !text.isEmpty }
     var prefersFemaleVoice: Bool { SpeechSupport.wantsFemale(gender) }
@@ -106,6 +109,7 @@ final class SpeechController: NSObject, ObservableObject {
 
     func stop() {
         renderGeneration += 1
+        NeuralVoice.cancelActiveRenders()      // kill any in-flight synthesis immediately — no orphaned CPU
         player?.stop()
         player = nil
         clock.isPlaying = false
@@ -113,8 +117,7 @@ final class SpeechController: NSObject, ObservableObject {
         stopTick()
         spokenRange = nil
         clock.elapsed = 0
-        for c in chunks { if let u = c.url { try? FileManager.default.removeItem(at: u) } }
-        chunks = []
+        chunks = []                            // rendered audio stays in the NeuralVoice cache
         currentChunk = 0
         pendingChunkStart = nil
         systemRendering = false
@@ -157,10 +160,18 @@ final class SpeechController: NSObject, ObservableObject {
         let female = prefersFemaleVoice
         let bin = NeuralVoice.shared.engineBinary
         let mdir = NeuralVoice.shared.modelDir
+        // Just-in-time: render only ~45s ahead of playback, then idle — synthesizing a whole long
+        // letter up-front pinned the CPU for minutes and slowed the entire machine.
         Task.detached(priority: .utility) { [weak self] in
             for (i, r) in ranges.enumerated() {
-                let alive = await MainActor.run { [weak self] in self?.renderGeneration == gen }
-                guard alive else { return }
+                gate: while true {
+                    guard let self else { return }
+                    switch await MainActor.run(body: { self.renderGate(generation: gen, next: i) }) {
+                    case .stop: return
+                    case .go: break gate
+                    case .wait: try? await Task.sleep(nanoseconds: 600_000_000)
+                    }
+                }
                 let url = NeuralVoice.render(text: t.substring(with: r), female: female,
                                              engineBinary: bin, modelDir: mdir)
                 let keepGoing = await MainActor.run { [weak self] in
@@ -171,12 +182,23 @@ final class SpeechController: NSObject, ObservableObject {
         }
     }
 
+    private enum RenderGate { case stop, go, wait }
+
+    /// Should the background renderer synthesize chunk `next` yet? Go when it's the one playback
+    /// is waiting on, or when the rendered buffer ahead of the playhead is under ~45 seconds.
+    private func renderGate(generation: Int, next: Int) -> RenderGate {
+        guard generation == renderGeneration, next < chunks.count else { return .stop }
+        if pendingChunkStart == next { return .go }
+        var renderedEnd: TimeInterval = 0
+        for c in chunks { guard c.url != nil else { break }; renderedEnd += c.duration }
+        return renderedEnd - currentTime() < 45 ? .go : .wait
+    }
+
     /// Store a finished chunk render; start playback if it's the one we're waiting on.
     /// Returns false when the loop should stop (stale generation or engine failure).
     private func commitChunkRender(index: Int, url: URL?, generation: Int) -> Bool {
         guard generation == renderGeneration, index < chunks.count else {
-            if let url { try? FileManager.default.removeItem(at: url) }
-            return false
+            return false                       // stale — the rendered file stays in the cache
         }
         guard let url, let probe = try? AVAudioPlayer(contentsOf: url) else {
             // Engine failed. If nothing has played yet, fall back to the system voice seamlessly.
