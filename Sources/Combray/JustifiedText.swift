@@ -6,10 +6,14 @@ import AppKit
 /// justification. Paragraphs are separated by blank lines in `text`; `paragraphSpacing` is the gap
 /// between them.
 ///
-/// Crucially, the wrap width is driven **explicitly** from the SwiftUI-measured width (a
-/// `GeometryReader`) and hard-set on the text container — letting the `NSTextView` size itself made
-/// it fall back to its single-line width and spill off the side of the pane. Height self-reports back
-/// through a binding so the surrounding scroll layout reserves the right space.
+/// The wrap width is driven **explicitly** from the SwiftUI-measured width (a `GeometryReader`)
+/// and hard-set on the text container — letting the `NSTextView` size itself made it fall back to
+/// its single-line width and spill off the pane. Height self-reports back through a binding.
+///
+/// Performance matters here: SwiftUI re-runs `updateNSView` on every state tick (several Hz during
+/// read-aloud), and a full justified re-layout of a long letter each time saturated the main thread
+/// — buttons went sloppy, playback control lagged. The Coordinator caches what was last applied so
+/// a pass that changes nothing costs nothing, and a highlight move only repaints two word ranges.
 struct JustifiedText: View {
     let text: String
     var font: NSFont
@@ -29,8 +33,6 @@ struct JustifiedText: View {
         .frame(height: measuredHeight)
     }
 
-    /// The AppKit text view. `width` is the exact wrap width measured by the SwiftUI `GeometryReader`;
-    /// `height` reports the laid-out height back up.
     private struct Rep: NSViewRepresentable {
         let text: String
         let font: NSFont
@@ -40,6 +42,15 @@ struct JustifiedText: View {
         let highlight: NSRange?
         let width: CGFloat
         @Binding var height: CGFloat
+
+        /// What's currently applied to the NSTextView — so unchanged passes are free.
+        final class Coordinator {
+            var text = ""
+            var width: CGFloat = 0
+            var highlight: NSRange?
+            var height: CGFloat = 0
+        }
+        func makeCoordinator() -> Coordinator { Coordinator() }
 
         func makeNSView(context: Context) -> NSTextView {
             let tv = NSTextView()
@@ -58,23 +69,39 @@ struct JustifiedText: View {
             guard width > 0,
                   let tc = tv.textContainer, let lm = tv.layoutManager, let storage = tv.textStorage
             else { return }
+            let coord = context.coordinator
 
-            if tv.string != text { storage.setAttributedString(attributed()) }
+            let textChanged = coord.text != text
+            let widthChanged = abs(coord.width - width) > 0.5
 
-            // Hard-constrain the wrap width to the SwiftUI-measured width.
-            tc.size = CGSize(width: width, height: .greatestFiniteMagnitude)
-
-            // Per-word read-aloud highlight (repaint only — cheap, keeps selection/scroll).
-            storage.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: storage.length))
-            if let h = highlight, h.location >= 0, h.location + h.length <= storage.length {
-                storage.addAttribute(.backgroundColor, value: Theme.accentNS.withAlphaComponent(0.35), range: h)
+            if textChanged {
+                storage.setAttributedString(attributed())
+                coord.text = text
+                coord.highlight = nil               // attributes were reset with the text
             }
 
-            lm.ensureLayout(for: tc)
-            let needed = ceil(lm.usedRect(for: tc).height)
-            tv.frame = CGRect(x: 0, y: 0, width: width, height: needed)
-            if abs(needed - height) > 0.5 {
-                DispatchQueue.main.async { self.height = needed }
+            if textChanged || widthChanged {        // the only cases that need a full re-layout
+                coord.width = width
+                tc.size = CGSize(width: width, height: .greatestFiniteMagnitude)
+                lm.ensureLayout(for: tc)
+                let needed = ceil(lm.usedRect(for: tc).height)
+                tv.frame = CGRect(x: 0, y: 0, width: width, height: needed)
+                if abs(needed - coord.height) > 0.5 {
+                    coord.height = needed
+                    DispatchQueue.main.async { self.height = needed }
+                }
+            }
+
+            if coord.highlight != highlight {       // repaint just the two affected word ranges
+                let len = storage.length
+                if let old = coord.highlight, old.location >= 0, old.location + old.length <= len {
+                    storage.removeAttribute(.backgroundColor, range: old)
+                }
+                if let h = highlight, h.location >= 0, h.location + h.length <= len {
+                    storage.addAttribute(.backgroundColor,
+                                         value: Theme.accentNS.withAlphaComponent(0.35), range: h)
+                }
+                coord.highlight = highlight
             }
         }
 

@@ -85,9 +85,11 @@ final class NeuralVoice: ObservableObject {
         let out = FileManager.default.temporaryDirectory
             .appendingPathComponent("combray-neural-\(UUID().uuidString).wav")
         let threads = max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2))
+        // `nice`d: the render must never crowd the UI thread or the audio playback it feeds.
         let p = Process()
-        p.executableURL = engineBinary
-        p.arguments = ["--num-threads=\(threads)",
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/nice")
+        p.arguments = ["-n", "10", engineBinary.path,
+                       "--num-threads=\(threads)",
                        "--kokoro-model=\(modelDir.appendingPathComponent("model.int8.onnx").path)",
                        "--kokoro-voices=\(modelDir.appendingPathComponent("voices.bin").path)",
                        "--kokoro-tokens=\(modelDir.appendingPathComponent("tokens.txt").path)",

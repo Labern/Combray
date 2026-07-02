@@ -6,8 +6,20 @@ import CombrayCore
 
 // MARK: - Helpers
 
+/// Page-image cache. SwiftUI re-evaluates the detail view on every state tick (playback runs at
+/// several Hz), and decoding a multi-megabyte JPEG on the main thread on EVERY pass made the whole
+/// UI sloppy — clicks queued behind image decodes. One decode per file, then it's free.
+@MainActor private let pageImageCache = NSCache<NSString, NSImage>()
+
+@MainActor
 func loadImage(_ url: URL) -> Image? {
-    NSImage(contentsOf: url).map { Image(nsImage: $0) }
+    let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+        .map { String($0.timeIntervalSince1970) } ?? ""
+    let key = (url.path + "|" + mtime) as NSString
+    if let hit = pageImageCache.object(forKey: key) { return Image(nsImage: hit) }
+    guard let img = NSImage(contentsOf: url) else { return nil }
+    pageImageCache.setObject(img, forKey: key)
+    return Image(nsImage: img)
 }
 
 /// A page image you can pinch to zoom, drag to pan when zoomed, and double-click to reset.

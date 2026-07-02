@@ -2,28 +2,40 @@ import SwiftUI
 import AVFoundation
 import CombrayCore
 
+/// High-frequency playback state, split into its own observable so the ticking timer re-renders
+/// ONLY the playback bar — not the whole letter view (title, buttons, photos). Before the split,
+/// every 0.12s tick re-evaluated everything and the UI went sloppy during playback.
+@MainActor
+final class PlaybackClock: ObservableObject {
+    @Published var elapsed: TimeInterval = 0
+    @Published var total: TimeInterval = 0
+    @Published var isPlaying = false
+    @Published var isPreparing = false        // rendering / buffering (spinner on play)
+    @Published var voiceIsRobotic = false     // best available voice is the compact tier
+
+    var progress: Double { total > 0 ? min(1, elapsed / total) : 0 }
+}
+
 /// Reads a transcription aloud. Two engines, one transport:
 ///
 ///  • **Neural (preferred)** — Combray's embedded Kokoro voice (see `NeuralVoice`). It renders at
 ///    ~2× realtime, so the text is split into chunks (`SpeechSupport.chunkRanges`: small first
-///    chunk, then larger) and rendered **ahead of playback**: chunk 1 plays within a few seconds
-///    while the renderer keeps working ahead. Word highlight uses character-proportional timings.
+///    chunk, then larger) and rendered **ahead of playback**. The render process runs `nice`d so
+///    it can never crowd the UI or the audio.
 ///
 ///  • **System (fallback)** — `AVSpeechSynthesizer.write` to a single file (~50× realtime), with
-///    exact per-word timestamps from the render-time delegate. Used until the neural voice is
-///    installed, or if it fails.
+///    exact per-word timestamps from the render-time delegate.
 ///
 /// Playback is always a real `AVAudioPlayer` — live `AVSpeechSynthesizer` playback proved silently
-/// broken on macOS 26 (play/pause/skip dead), whereas rendered audio gives instant pause, true
-/// seeking, and an exact timer.
+/// broken on macOS 26 — giving instant pause, true seeking, and an exact timer. Published values
+/// are equality-guarded so a tick that changes nothing re-renders nothing.
 @MainActor
 final class SpeechController: NSObject, ObservableObject {
-    @Published private(set) var isPlaying = false
-    @Published private(set) var isPreparing = false       // rendering / buffering (spinner on play)
-    @Published private(set) var spokenRange: NSRange?     // word being read, in `text` coordinates
-    @Published private(set) var elapsed: TimeInterval = 0
-    @Published private(set) var total: TimeInterval = 0
-    @Published private(set) var voiceIsRobotic = false    // best available voice is the compact tier
+    /// The word being read, in `text` coordinates — published at word rate (~2–3 Hz), for the
+    /// transcription highlight. Everything faster lives on `clock`.
+    @Published private(set) var spokenRange: NSRange?
+
+    let clock = PlaybackClock()
 
     private var text = ""
     private var gender: String?
@@ -51,7 +63,6 @@ final class SpeechController: NSObject, ObservableObject {
 
     override init() { super.init() }
 
-    var progress: Double { total > 0 ? min(1, elapsed / total) : 0 }
     var hasText: Bool { !text.isEmpty }
     var prefersFemaleVoice: Bool { SpeechSupport.wantsFemale(gender) }
 
@@ -63,22 +74,22 @@ final class SpeechController: NSObject, ObservableObject {
         text = trimmed
         gender = newGender
         let sys = SpeechController.voice(forGender: newGender)
-        voiceIsRobotic = !NeuralVoice.shared.isReady()
+        clock.voiceIsRobotic = !NeuralVoice.shared.isReady()
             && SpeechSupport.voiceIsRobotic(qualityTier: SpeechController.tier(sys))
-        total = SpeechSupport.estimateDuration(trimmed, wpm: 165)   // placeholder until rendered
+        clock.total = SpeechSupport.estimateDuration(trimmed, wpm: 165)   // placeholder until rendered
     }
 
-    func toggle() { isPlaying ? pause() : play() }
+    func toggle() { clock.isPlaying ? pause() : play() }
 
     func play() {
         guard hasText else { return }
-        if let p = player, !p.isPlaying { p.play(); isPlaying = true; startTick(); return }
-        guard player == nil, !isPreparing else { return }
+        if let p = player, !p.isPlaying { p.play(); clock.isPlaying = true; startTick(); return }
+        guard player == nil, !clock.isPreparing else { return }
 
         if NeuralVoice.shared.isReady(), !neuralFailed {
             startNeural()
         } else {
-            if voiceIsRobotic, !NeuralVoice.shared.installing {
+            if clock.voiceIsRobotic, !NeuralVoice.shared.installing {
                 // Quietly fetch the natural voice for next time; play with the system voice now.
                 Task { await NeuralVoice.shared.install(); self.adoptNeuralIfReady() }
             }
@@ -88,7 +99,7 @@ final class SpeechController: NSObject, ObservableObject {
 
     func pause() {
         player?.pause()
-        isPlaying = false
+        clock.isPlaying = false
         stopTick()
         syncNow()
     }
@@ -97,11 +108,11 @@ final class SpeechController: NSObject, ObservableObject {
         renderGeneration += 1
         player?.stop()
         player = nil
-        isPlaying = false
-        isPreparing = false
+        clock.isPlaying = false
+        clock.isPreparing = false
         stopTick()
         spokenRange = nil
-        elapsed = 0
+        clock.elapsed = 0
         for c in chunks { if let u = c.url { try? FileManager.default.removeItem(at: u) } }
         chunks = []
         currentChunk = 0
@@ -121,8 +132,8 @@ final class SpeechController: NSObject, ObservableObject {
 
     /// Seek to a fraction of the letter (tap/drag on the progress bar).
     func seek(toFraction f: Double) {
-        guard total > 0 else { return }
-        seek(toTime: total * max(0, min(1, f)))
+        guard clock.total > 0 else { return }
+        seek(toTime: clock.total * max(0, min(1, f)))
     }
 
     /// Explicit "get the natural voice" action from the playback bar.
@@ -133,12 +144,12 @@ final class SpeechController: NSObject, ObservableObject {
     // MARK: - Neural chunked engine
 
     private func startNeural() {
-        isPreparing = true
+        clock.isPreparing = true
         usingSystemFile = false
         renderGeneration += 1
         let gen = renderGeneration
         let ranges = SpeechSupport.chunkRanges(text: text)
-        guard !ranges.isEmpty else { isPreparing = false; return }
+        guard !ranges.isEmpty else { clock.isPreparing = false; return }
         chunks = ranges.map { Chunk(range: $0) }
         currentChunk = 0
         pendingChunkStart = 0
@@ -146,7 +157,7 @@ final class SpeechController: NSObject, ObservableObject {
         let female = prefersFemaleVoice
         let bin = NeuralVoice.shared.engineBinary
         let mdir = NeuralVoice.shared.modelDir
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task.detached(priority: .utility) { [weak self] in
             for (i, r) in ranges.enumerated() {
                 let alive = await MainActor.run { [weak self] in self?.renderGeneration == gen }
                 guard alive else { return }
@@ -173,7 +184,7 @@ final class SpeechController: NSObject, ObservableObject {
             if index == 0 {
                 chunks = []
                 pendingChunkStart = nil
-                isPreparing = false
+                clock.isPreparing = false
                 startSystem()
             } else {
                 pendingChunkStart = nil     // play what we have; stop advancing at the gap
@@ -203,8 +214,8 @@ final class SpeechController: NSObject, ObservableObject {
         p.currentTime = max(0, min(offset, max(0, p.duration - 0.05)))
         player = p
         p.play()
-        isPlaying = true
-        isPreparing = false
+        clock.isPlaying = true
+        clock.isPreparing = false
         startTick()
     }
 
@@ -213,10 +224,10 @@ final class SpeechController: NSObject, ObservableObject {
         player = nil
         if usingSystemFile || chunks.isEmpty || next >= chunks.count {
             // Finished the letter (or the single system file): rest at the start, ready to replay.
-            isPlaying = false
+            clock.isPlaying = false
             stopTick()
             spokenRange = nil
-            elapsed = 0
+            clock.elapsed = 0
             currentChunk = 0
             if !chunks.isEmpty, chunks[0].url != nil {
                 // keep renders — replay is instant via play()
@@ -232,8 +243,8 @@ final class SpeechController: NSObject, ObservableObject {
             startChunk(next, at: 0)
         } else {
             // Renderer hasn't caught up — buffer.
-            isPlaying = true                 // conceptually still playing; spinner shows
-            isPreparing = true
+            clock.isPlaying = true               // conceptually still playing; spinner shows
+            clock.isPreparing = true
             pendingChunkStart = next
         }
     }
@@ -245,11 +256,11 @@ final class SpeechController: NSObject, ObservableObject {
         if let u = systemAudioURL, let p = try? AVAudioPlayer(contentsOf: u) {
             usingSystemFile = true
             p.delegate = self; p.prepareToPlay(); player = p
-            p.play(); isPlaying = true; startTick()
+            p.play(); clock.isPlaying = true; startTick()
             return
         }
         systemRendering = true
-        isPreparing = true
+        clock.isPreparing = true
         let t = text
         let voice = SpeechController.voice(forGender: gender)
         Task.detached(priority: .userInitiated) { [weak self] in
@@ -260,7 +271,7 @@ final class SpeechController: NSObject, ObservableObject {
 
     private func systemRenderDidFinish(_ result: SystemRender?, forText t: String) {
         systemRendering = false
-        isPreparing = false
+        clock.isPreparing = false
         guard text == t else {
             if let url = result?.url { try? FileManager.default.removeItem(at: url) }
             return
@@ -269,12 +280,12 @@ final class SpeechController: NSObject, ObservableObject {
         systemAudioURL = r.url
         systemWords = r.words
         usingSystemFile = true
-        total = r.duration
+        clock.total = r.duration
         p.delegate = self
         p.prepareToPlay()
         player = p
         p.play()
-        isPlaying = true
+        clock.isPlaying = true
         startTick()
     }
 
@@ -357,10 +368,10 @@ final class SpeechController: NSObject, ObservableObject {
         for (i, c) in chunks.enumerated() {
             guard c.url != nil else { break }
             if t < acc + c.duration || i == chunks.count - 1 {
-                let wasPlaying = isPlaying
+                let wasPlaying = clock.isPlaying
                 player?.stop()
                 startChunk(i, at: t - acc)
-                if !wasPlaying { player?.pause(); isPlaying = false; stopTick() }
+                if !wasPlaying { player?.pause(); clock.isPlaying = false; stopTick() }
                 syncNow()
                 return
             }
@@ -379,38 +390,42 @@ final class SpeechController: NSObject, ObservableObject {
             else { remainingChars += c.range.length }
         }
         if renderedChars > 0 {
-            total = rendered + rendered / Double(renderedChars) * Double(remainingChars)
+            let newTotal = rendered + rendered / Double(renderedChars) * Double(remainingChars)
+            if abs(newTotal - clock.total) > 0.4 { clock.total = newTotal }
         }
     }
 
     private func startTick() {
         stopTick()
-        tick = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
+        tick = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.syncNow() }
         }
     }
     private func stopTick() { tick?.invalidate(); tick = nil }
 
+    /// Equality-guarded: a tick that changes nothing publishes nothing (and re-renders nothing).
     private func syncNow() {
         guard let p = player else { return }
-        elapsed = currentTime()
+        let t = currentTime()
+        if abs(clock.elapsed - t) > 0.08 { clock.elapsed = t }
         let words = usingSystemFile || chunks.isEmpty
             ? systemWords
             : (currentChunk < chunks.count ? chunks[currentChunk].words : [])
-        spokenRange = words.last(where: { $0.time <= p.currentTime + 0.05 })?.range ?? spokenRange
+        let range = words.last(where: { $0.time <= p.currentTime + 0.05 })?.range ?? spokenRange
+        if range != spokenRange { spokenRange = range }
     }
 
     /// Once the natural voice is installed, drop any robotic render so the next play uses it.
     private func adoptNeuralIfReady() {
         guard NeuralVoice.shared.isReady() else { return }
-        voiceIsRobotic = false
-        if usingSystemFile, !isPlaying {
+        clock.voiceIsRobotic = false
+        if usingSystemFile, !clock.isPlaying {
             player = nil
             usingSystemFile = false
             systemWords = []
             if let u = systemAudioURL { try? FileManager.default.removeItem(at: u) }
             systemAudioURL = nil
-            elapsed = 0
+            clock.elapsed = 0
             spokenRange = nil
         }
     }
@@ -447,22 +462,28 @@ extension SpeechController: AVAudioPlayerDelegate {
 }
 
 /// The read-aloud control strip: play/pause · position / total timer · progress (tap to seek) ·
-/// ±15s. Shown full-width beneath the "Transcription" header.
+/// ±15s. Observes the high-frequency `PlaybackClock`, so ticks re-render only this bar.
 struct PlaybackBar: View {
     @ObservedObject var controller: SpeechController
     @ObservedObject private var neural = NeuralVoice.shared
+    @ObservedObject private var clock: PlaybackClock
+
+    init(controller: SpeechController) {
+        self.controller = controller
+        self.clock = controller.clock
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 16) {
-                if controller.isPreparing {
+                if clock.isPreparing {
                     ProgressView().controlSize(.small).frame(width: 28, height: 28)
                 } else {
-                    ctl(controller.isPlaying ? "pause.circle.fill" : "play.circle.fill", size: 28) { controller.toggle() }
+                    ctl(clock.isPlaying ? "pause.circle.fill" : "play.circle.fill", size: 28) { controller.toggle() }
                 }
 
                 // position / total — left of the progress bar; fixedSize so it's never clipped
-                Text("\(SpeechSupport.clock(controller.elapsed)) / \(SpeechSupport.clock(controller.total))")
+                Text("\(SpeechSupport.clock(clock.elapsed)) / \(SpeechSupport.clock(clock.total))")
                     .font(.system(size: 15, weight: .semibold).monospacedDigit())
                     .foregroundStyle(Theme.ink)
                     .fixedSize()
@@ -470,7 +491,7 @@ struct PlaybackBar: View {
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Theme.line)
-                        Capsule().fill(Theme.accent).frame(width: max(3, g.size.width * controller.progress))
+                        Capsule().fill(Theme.accent).frame(width: max(3, g.size.width * clock.progress))
                     }
                     .contentShape(Rectangle())
                     .gesture(DragGesture(minimumDistance: 0).onChanged { v in
@@ -494,7 +515,7 @@ struct PlaybackBar: View {
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundStyle(Theme.faint)
-            } else if controller.voiceIsRobotic {
+            } else if clock.voiceIsRobotic {
                 Button { controller.upgradeVoice() } label: {
                     Label(neural.lastError == nil
                             ? "This voice sounds robotic — get Combray’s natural voice (free, one-time)"

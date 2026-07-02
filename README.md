@@ -2,7 +2,7 @@
 
 *One bite of the madeleine brings it all back.*
 
-**Version: 0.14.2** · **[combray — the website](https://labern.github.io/Combray/)**
+**Version: 0.14.3** · **[combray — the website](https://labern.github.io/Combray/)**
 
 A personal **macOS** app that rescues **near-illegible handwritten letters** into a searchable,
 browsable archive. Photograph a letter with your iPhone, and **Claude** transcribes it — then stores
