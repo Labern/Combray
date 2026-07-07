@@ -41,7 +41,7 @@ struct QuoteBar: View {
     /// App version from the bundle Info.plist (three-part), shown in the footer. Falls back when the
     /// app is run un-bundled (e.g. `swift run`).
     static var appVersion: String {
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.15.0"
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.15.1"
     }
 
     var body: some View {

@@ -125,6 +125,7 @@ public enum AnthropicError: LocalizedError {
     case http(Int, String)
     case noContent
     case badImage(String)
+    case signInExpired
 
     public var errorDescription: String? {
         switch self {
@@ -132,6 +133,8 @@ public enum AnthropicError: LocalizedError {
         case let .http(code, body): return "Anthropic API error \(code): \(body)"
         case .noContent: return "The model returned no content."
         case let .badImage(p): return "Couldn't read image: \(p)"
+        case .signInExpired:
+            return "Your Claude sign-in has expired — open Settings and press “Sign in with Claude” again."
         }
     }
 }
@@ -650,22 +653,60 @@ public struct AnthropicClient: Sendable {
     Return ONLY the JSON object with the merges (empty list if nothing should change).
     """
 
-    /// Resolves auth headers from the stored credential (refreshing an expired OAuth token).
+    /// Serializes OAuth token refresh across ALL concurrent API calls. The refresh token is
+    /// one-time-use: when several requests hit an expired access token at once (people resolution
+    /// on launch + voicing enrichment + a transcription all fire together), racing refreshes each
+    /// redeem the SAME refresh token — the first wins and rotates it, the losers get a 400, and
+    /// depending on ordering the stored token is left burned, wedging every future call in a
+    /// "refresh token / 400" loop until the user signs in again. One refresh runs; everyone else
+    /// awaits it, then re-reads the (now fresh) credential.
+    private actor TokenRefreshGate {
+        private var inFlight: Task<Void, Error>?
+
+        func refreshIfNeeded() async throws {
+            if let running = inFlight {           // someone is already refreshing — ride along
+                try await running.value
+                return
+            }
+            guard var cred = Keychain.credential(), cred.kind == .oauth,
+                  cred.isExpired, let rt = cred.refreshToken else { return }   // fresh (or N/A)
+            let task = Task {
+                do {
+                    let tokens = try await ClaudeAuth.refresh(rt)
+                    cred.accessToken = tokens.accessToken
+                    cred.refreshToken = tokens.refreshToken ?? rt
+                    cred.expiresAt = tokens.expiresAt
+                    Keychain.save(cred)
+                } catch {
+                    // A 400/401 from the token endpoint means the refresh token itself is dead
+                    // (expired, revoked, or already redeemed) — surface the actionable truth,
+                    // not a raw HTTP error.
+                    let ns = error as NSError
+                    if ns.domain == "ClaudeAuth", ns.code == 400 || ns.code == 401 {
+                        throw AnthropicError.signInExpired
+                    }
+                    throw error
+                }
+            }
+            inFlight = task
+            defer { inFlight = nil }
+            try await task.value
+        }
+    }
+    private static let refreshGate = TokenRefreshGate()
+
+    /// Resolves auth headers from the stored credential (refreshing an expired OAuth token —
+    /// single-flight, see `TokenRefreshGate`).
     static func authHeaders() async throws -> [String: String] {
-        guard var cred = Keychain.credential() else { throw AnthropicError.missingAPIKey }
-        switch cred.kind {
+        guard let initial = Keychain.credential() else { throw AnthropicError.missingAPIKey }
+        switch initial.kind {
         case .apiKey:
-            guard let key = cred.apiKey, !key.isEmpty else { throw AnthropicError.missingAPIKey }
+            guard let key = initial.apiKey, !key.isEmpty else { throw AnthropicError.missingAPIKey }
             return ["x-api-key": key]
         case .oauth:
-            if cred.isExpired, let refresh = cred.refreshToken {
-                let tokens = try await ClaudeAuth.refresh(refresh)
-                cred.accessToken = tokens.accessToken
-                cred.refreshToken = tokens.refreshToken ?? refresh
-                cred.expiresAt = tokens.expiresAt
-                Keychain.save(cred)
-            }
-            guard let token = cred.accessToken, !token.isEmpty else { throw AnthropicError.missingAPIKey }
+            try await refreshGate.refreshIfNeeded()
+            guard let cred = Keychain.credential(),
+                  let token = cred.accessToken, !token.isEmpty else { throw AnthropicError.missingAPIKey }
             return ["authorization": "Bearer \(token)", "anthropic-beta": "oauth-2025-04-20"]
         }
     }
