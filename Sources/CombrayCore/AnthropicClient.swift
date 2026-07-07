@@ -126,6 +126,7 @@ public enum AnthropicError: LocalizedError {
     case noContent
     case badImage(String)
     case signInExpired
+    case overloaded
 
     public var errorDescription: String? {
         switch self {
@@ -135,6 +136,8 @@ public enum AnthropicError: LocalizedError {
         case let .badImage(p): return "Couldn't read image: \(p)"
         case .signInExpired:
             return "Your Claude sign-in has expired."
+        case .overloaded:
+            return "Claude is briefly overloaded — try again in a few seconds."
         }
     }
 }
@@ -200,7 +203,7 @@ public struct AnthropicClient: Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 300
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Self.dataWithRetry(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             throw AnthropicError.http(status, String(data: data, encoding: .utf8) ?? "")
@@ -274,7 +277,7 @@ public struct AnthropicClient: Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 180
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Self.dataWithRetry(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             throw AnthropicError.http(status, String(data: data, encoding: .utf8) ?? "")
@@ -404,7 +407,7 @@ public struct AnthropicClient: Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 120
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Self.dataWithRetry(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             throw AnthropicError.http(status, String(data: data, encoding: .utf8) ?? "")
@@ -469,7 +472,7 @@ public struct AnthropicClient: Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 120
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Self.dataWithRetry(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             throw AnthropicError.http(status, String(data: data, encoding: .utf8) ?? "")
@@ -537,7 +540,7 @@ public struct AnthropicClient: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 60
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Self.dataWithRetry(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             throw AnthropicError.http(status, String(data: data, encoding: .utf8) ?? "")
@@ -621,7 +624,7 @@ public struct AnthropicClient: Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 120
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Self.dataWithRetry(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             throw AnthropicError.http(status, String(data: data, encoding: .utf8) ?? "")
@@ -652,6 +655,34 @@ public struct AnthropicClient: Sendable {
     confidence "low". Do not invent names that are not grounded in the catalog or profile. \
     Return ONLY the JSON object with the merges (empty list if nothing should change).
     """
+
+    /// Sends a request, transparently retrying transient failures — Anthropic's 529
+    /// "overloaded_error" (plus 502/503/408 and network timeouts) — with short exponential
+    /// backoff. Most overload blips vanish inside one ask; a persistent one surfaces as a plain
+    /// "briefly overloaded, try again" message instead of raw JSON. 429s are NOT retried here:
+    /// the controller's plan-limit fallback needs to see those.
+    static func dataWithRetry(for request: URLRequest, attempts: Int = 3) async throws -> (Data, URLResponse) {
+        let transient: Set<Int> = [529, 503, 502, 408]
+        for attempt in 1...attempts {
+            let data: Data
+            let response: URLResponse
+            do {
+                (data, response) = try await URLSession.shared.data(for: request)
+            } catch let e as URLError where e.code == .timedOut || e.code == .networkConnectionLost {
+                if attempt == attempts { throw e }
+                try? await Task.sleep(nanoseconds: UInt64(Double(attempt) * 1.6 * 1_000_000_000))
+                continue
+            }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if transient.contains(status) {
+                if attempt == attempts { throw AnthropicError.overloaded }
+                try? await Task.sleep(nanoseconds: UInt64(Double(attempt) * 1.6 * 1_000_000_000))
+                continue
+            }
+            return (data, response)
+        }
+        throw AnthropicError.noContent   // unreachable — the loop always returns or throws
+    }
 
     /// Serializes OAuth token refresh across ALL concurrent API calls. The refresh token is
     /// one-time-use: when several requests hit an expired access token at once (people resolution
