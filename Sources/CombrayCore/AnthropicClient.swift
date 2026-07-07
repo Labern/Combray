@@ -134,7 +134,7 @@ public enum AnthropicError: LocalizedError {
         case .noContent: return "The model returned no content."
         case let .badImage(p): return "Couldn't read image: \(p)"
         case .signInExpired:
-            return "Your Claude sign-in has expired — open Settings and press “Sign in with Claude” again."
+            return "Your Claude sign-in has expired."
         }
     }
 }

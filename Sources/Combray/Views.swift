@@ -155,14 +155,24 @@ struct RootView: View {
             .padding(.bottom, 24)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if let err = c.errorText {
+            // An expired sign-in carries its own one-click fix — never send the user hunting.
+            let expired = err == AnthropicError.signInExpired.errorDescription
             HStack(spacing: 14) {
-                Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundStyle(.orange)
+                Image(systemName: expired ? "person.crop.circle.badge.exclamationmark"
+                                          : "exclamationmark.triangle.fill")
+                    .font(.title2).foregroundStyle(.orange)
                 Text(err).font(Theme.body).lineLimit(2)
+                if expired {
+                    Button { c.errorText = nil; c.startSignIn() } label: {
+                        Label("Sign in with Claude", systemImage: "person.crop.circle")
+                    }
+                    .buttonStyle(BigButtonStyle(compact: true))
+                }
                 Button("Dismiss") { c.errorText = nil }.font(Theme.big)
             }
             .padding(.horizontal, 26).padding(.vertical, 18)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-            .padding(.bottom, 24).frame(maxWidth: 620)
+            .padding(.bottom, 24).frame(maxWidth: expired ? 760 : 620)
         }
     }
 }
